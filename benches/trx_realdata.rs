@@ -19,7 +19,7 @@
 //!                                 (default: bench/bench_results.jsonl)
 
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Mutex, Once, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -255,19 +255,41 @@ fn ensure_reference_trx() -> PathBuf {
     path
 }
 
-/// Shared reference TRX file — loaded once, reused across all benchmarks.
-fn get_reference() -> &'static TrxFile<f16> {
-    static REF: OnceLock<TrxFile<f16>> = OnceLock::new();
+/// Shared reference directory on disk — extracted once, reused across all benchmarks.
+/// Returns (dir_path, nb_streamlines, nb_vertices).
+fn get_reference_dir() -> &'static (PathBuf, usize, usize) {
+    static REF: OnceLock<(PathBuf, usize, usize)> = OnceLock::new();
     REF.get_or_init(|| {
         let path = ensure_reference_trx();
-        eprintln!("Loading reference TRX file...");
-        let trx = TrxFile::<f16>::load(&path).unwrap();
-        eprintln!(
-            "  {} streamlines, {} vertices",
-            trx.nb_streamlines(),
-            trx.nb_vertices()
-        );
-        trx
+        eprintln!("Extracting reference TRX to directory...");
+
+        // Extract zip to a persistent temp directory.
+        let dir = tempfile::TempDir::new().expect("failed to create temp dir");
+        #[allow(deprecated)]
+        let dir_path = dir.into_path(); // don't delete on drop — we keep it for the run
+
+        let file = std::fs::File::open(&path).expect("failed to open reference trx");
+        let mut archive = zip::ZipArchive::new(file).expect("invalid zip");
+        for i in 0..archive.len() {
+            let mut entry = archive.by_index(i).unwrap();
+            let entry_path = dir_path.join(entry.name());
+            if entry.is_dir() {
+                std::fs::create_dir_all(&entry_path).unwrap();
+            } else {
+                if let Some(parent) = entry_path.parent() {
+                    std::fs::create_dir_all(parent).unwrap();
+                }
+                let mut out_file = std::fs::File::create(&entry_path).unwrap();
+                std::io::copy(&mut entry, &mut out_file).unwrap();
+            }
+        }
+
+        // Read header to get counts.
+        let header = trx_rs::Header::from_file(&dir_path.join("header.json")).unwrap();
+        let nb_sl = header.nb_streamlines as usize;
+        let nb_v = header.nb_vertices as usize;
+        eprintln!("  {nb_sl} streamlines, {nb_v} vertices  (dir: {})", dir_path.display());
+        (dir_path, nb_sl, nb_v)
     })
 }
 
@@ -280,9 +302,10 @@ fn max_streamlines() -> usize {
 
 fn streamline_counts() -> Vec<usize> {
     let max = max_streamlines();
+    let (_, ref_nb, _) = get_reference_dir();
     [100_000, 500_000, 1_000_000, 5_000_000, 10_000_000]
         .into_iter()
-        .filter(|&c| c <= max)
+        .filter(|&c| c <= max && c <= *ref_nb)
         .collect()
 }
 
@@ -305,12 +328,170 @@ fn build_slabs() -> Vec<([f64; 3], [f64; 3])> {
         .collect()
 }
 
-/// Build a prefix subset of the reference as TrxFile<f16>, taking `n` streamlines.
-/// Uses subset_streamlines to avoid copying + converting all positions.
-fn build_subset_f16(reference: &TrxFile<f16>, n: usize) -> TrxFile<f16> {
-    let count = n.min(reference.nb_streamlines());
-    let indices: Vec<usize> = (0..count).collect();
-    trx_rs::ops::subset::subset_streamlines(reference, &indices).unwrap()
+/// Truncate all array files in a directory to `row_count` rows,
+/// parsing `{name}.{ncols}.{dtype}` filenames to compute byte sizes.
+fn truncate_array_dir(dir: &Path, row_count: usize) {
+    if !dir.exists() {
+        return;
+    }
+    for entry in std::fs::read_dir(dir).unwrap() {
+        let entry = entry.unwrap();
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let fname = path.file_name().unwrap().to_str().unwrap();
+        if let Ok(parsed) = trx_rs::io::filename::TrxFilename::parse(fname) {
+            let new_len = (row_count * parsed.ncols * parsed.dtype.size_of()) as u64;
+            let file = std::fs::File::options().write(true).open(&path).unwrap();
+            file.set_len(new_len).unwrap();
+        }
+    }
+}
+
+/// Build a prefix subset on disk by writing only the needed prefix of each
+/// file from the reference directory. Returns an mmap-backed TrxFile.
+///
+/// This mirrors trx-cpp's `build_trx_file_on_disk_single()`: the result is
+/// mmap-backed, keeping RSS proportional to accessed pages rather than total
+/// data size. Unlike a full copy+truncate, we only write the bytes needed
+/// for `n` streamlines.
+fn build_prefix_on_disk(n: usize) -> TrxFile<f16> {
+    let (ref_dir, ref_nb, _) = get_reference_dir();
+    let count = n.min(*ref_nb);
+
+    let tmp = tempfile::TempDir::new().unwrap();
+    let dir = tmp.path().to_path_buf();
+    std::fs::create_dir_all(&dir).unwrap();
+
+    if count == *ref_nb {
+        // Full copy — use hardlinks where possible, fallback to copy.
+        copy_dir_recursive(ref_dir, &dir);
+        return trx_rs::io::directory::load_from_directory(&dir, Some(tmp)).unwrap();
+    }
+
+    // Read offsets from reference to find vertex_cutoff.
+    let ref_off_path = find_file_by_prefix(ref_dir, "offsets");
+    let ref_off_fname = ref_off_path.file_name().unwrap().to_str().unwrap();
+    let off_parsed = trx_rs::io::filename::TrxFilename::parse(ref_off_fname).unwrap();
+    let vertex_cutoff = read_offset_at(&ref_off_path, count, off_parsed.dtype);
+
+    // Find reference positions file for dtype info.
+    let ref_pos_path = find_file_by_prefix(ref_dir, "positions");
+    let ref_pos_fname = ref_pos_path.file_name().unwrap().to_str().unwrap();
+    let pos_parsed = trx_rs::io::filename::TrxFilename::parse(ref_pos_fname).unwrap();
+
+    // Write prefix of positions.
+    let pos_bytes = vertex_cutoff * pos_parsed.ncols * pos_parsed.dtype.size_of();
+    copy_file_prefix(&ref_pos_path, &dir.join(ref_pos_fname), pos_bytes);
+
+    // Write prefix of offsets.
+    let off_bytes = (count + 1) * off_parsed.ncols * off_parsed.dtype.size_of();
+    copy_file_prefix(&ref_off_path, &dir.join(ref_off_fname), off_bytes);
+
+    // Write prefix of DPS arrays.
+    copy_array_dir_prefix(&ref_dir.join("dps"), &dir.join("dps"), count);
+
+    // Write prefix of DPV arrays.
+    copy_array_dir_prefix(&ref_dir.join("dpv"), &dir.join("dpv"), vertex_cutoff);
+
+    // Copy groups directory (if it exists) — these need full copy since
+    // group membership indices aren't prefix-compatible.
+    let ref_groups = ref_dir.join("groups");
+    if ref_groups.exists() {
+        copy_dir_recursive(&ref_groups, &dir.join("groups"));
+    }
+
+    // Write updated header.
+    let mut header = trx_rs::Header::from_file(&ref_dir.join("header.json")).unwrap();
+    header.nb_streamlines = count as u64;
+    header.nb_vertices = vertex_cutoff as u64;
+    header.write_to(&dir.join("header.json")).unwrap();
+
+    trx_rs::io::directory::load_from_directory(&dir, Some(tmp)).unwrap()
+}
+
+/// Copy the first `n_bytes` from `src` to `dst`.
+fn copy_file_prefix(src: &Path, dst: &Path, n_bytes: usize) {
+    use std::io::{Read, Write as IoWrite};
+    let mut reader = std::fs::File::open(src).unwrap();
+    let mut writer = std::fs::File::create(dst).unwrap();
+    let mut remaining = n_bytes;
+    let mut buf = vec![0u8; 1024 * 1024]; // 1 MB chunks
+    while remaining > 0 {
+        let to_read = remaining.min(buf.len());
+        let n = reader.read(&mut buf[..to_read]).unwrap();
+        if n == 0 { break; }
+        writer.write_all(&buf[..n]).unwrap();
+        remaining -= n;
+    }
+}
+
+/// Copy prefix rows of all array files from src_dir to dst_dir.
+fn copy_array_dir_prefix(src_dir: &Path, dst_dir: &Path, row_count: usize) {
+    if !src_dir.exists() {
+        return;
+    }
+    std::fs::create_dir_all(dst_dir).unwrap();
+    for entry in std::fs::read_dir(src_dir).unwrap() {
+        let entry = entry.unwrap();
+        let path = entry.path();
+        if !path.is_file() { continue; }
+        let fname = path.file_name().unwrap().to_str().unwrap();
+        if let Ok(parsed) = trx_rs::io::filename::TrxFilename::parse(fname) {
+            let n_bytes = row_count * parsed.ncols * parsed.dtype.size_of();
+            copy_file_prefix(&path, &dst_dir.join(fname), n_bytes);
+        }
+    }
+}
+
+/// Read the offset value at index `idx` from an offsets file.
+fn read_offset_at(path: &Path, idx: usize, dtype: trx_rs::DType) -> usize {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut f = std::fs::File::open(path).unwrap();
+    let elem_size = dtype.size_of();
+    f.seek(SeekFrom::Start((idx * elem_size) as u64)).unwrap();
+    match dtype {
+        trx_rs::DType::UInt32 => {
+            let mut buf = [0u8; 4];
+            f.read_exact(&mut buf).unwrap();
+            u32::from_ne_bytes(buf) as usize
+        }
+        trx_rs::DType::UInt64 => {
+            let mut buf = [0u8; 8];
+            f.read_exact(&mut buf).unwrap();
+            u64::from_ne_bytes(buf) as usize
+        }
+        _ => panic!("unexpected offsets dtype: {dtype}"),
+    }
+}
+
+/// Find a file starting with `prefix.` in a directory.
+fn find_file_by_prefix(dir: &Path, prefix: &str) -> PathBuf {
+    for entry in std::fs::read_dir(dir).unwrap() {
+        let entry = entry.unwrap();
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy();
+        if name_str.starts_with(prefix) && name_str.as_bytes().get(prefix.len()) == Some(&b'.') {
+            return entry.path();
+        }
+    }
+    panic!("no file starting with '{prefix}.' in {}", dir.display());
+}
+
+/// Recursively copy a directory.
+fn copy_dir_recursive(src: &Path, dst: &Path) {
+    std::fs::create_dir_all(dst).unwrap();
+    for entry in std::fs::read_dir(src).unwrap() {
+        let entry = entry.unwrap();
+        let src_path = entry.path();
+        let dst_path = dst.join(entry.file_name());
+        if src_path.is_dir() {
+            copy_dir_recursive(&src_path, &dst_path);
+        } else {
+            std::fs::copy(&src_path, &dst_path).unwrap();
+        }
+    }
 }
 
 // ── Benchmarks ──────────────────────────────────────────────────────
@@ -349,7 +530,6 @@ fn bench_load(c: &mut Criterion) {
 /// Benchmark: Save TRX subsets of varying sizes to zip (stored) and directory.
 /// Uses native f16 dtype — no conversion.
 fn bench_save(c: &mut Criterion) {
-    let reference = get_reference();
     let counts = streamline_counts();
 
     // -- Zip (stored) saves --
@@ -358,12 +538,8 @@ fn bench_save(c: &mut Criterion) {
     group.sample_size(10);
 
     for &count in &counts {
-        if count > reference.nb_streamlines() {
-            continue;
-        }
-
-        eprintln!("Building f16 subset with {count} streamlines for save_zip_stored...");
-        let subset = build_subset_f16(reference, count);
+        eprintln!("Building on-disk f16 subset with {count} streamlines for save_zip_stored...");
+        let subset = build_prefix_on_disk(count);
 
         group.throughput(Throughput::Elements(count as u64));
         group.bench_with_input(BenchmarkId::new("f16", count), &subset, |b, trx| {
@@ -397,7 +573,6 @@ fn bench_save(c: &mut Criterion) {
                 total
             });
         });
-        // `subset` dropped here before building the next one
     }
 
     group.finish();
@@ -408,12 +583,8 @@ fn bench_save(c: &mut Criterion) {
     group.sample_size(10);
 
     for &count in &counts {
-        if count > reference.nb_streamlines() {
-            continue;
-        }
-
-        eprintln!("Building f16 subset with {count} streamlines for save_directory...");
-        let subset = build_subset_f16(reference, count);
+        eprintln!("Building on-disk f16 subset with {count} streamlines for save_directory...");
+        let subset = build_prefix_on_disk(count);
 
         group.throughput(Throughput::Elements(count as u64));
         group.bench_with_input(BenchmarkId::new("f16", count), &subset, |b, trx| {
@@ -452,7 +623,6 @@ fn bench_save(c: &mut Criterion) {
 /// Benchmark: Streaming translate — load, translate positions +1.0, save.
 /// This benchmark necessarily converts to f32 for arithmetic, matching trx-cpp.
 fn bench_stream_translate(c: &mut Criterion) {
-    let reference = get_reference();
     let counts = streamline_counts();
 
     let mut group = c.benchmark_group("stream_translate_write");
@@ -460,16 +630,12 @@ fn bench_stream_translate(c: &mut Criterion) {
     group.sample_size(10);
 
     for &count in &counts {
-        if count > reference.nb_streamlines() {
-            continue;
-        }
-
-        // Build f16 subset, save to temp zip, then drop the in-memory subset.
-        eprintln!("Building f16 subset with {count} streamlines for stream_translate...");
+        // Build on-disk subset, save to temp zip for the translate benchmark input.
+        eprintln!("Building on-disk f16 subset with {count} streamlines for stream_translate...");
         let input_dir = tempfile::TempDir::new().unwrap();
         let input_path = input_dir.path().join("input.trx");
         {
-            let subset = build_subset_f16(reference, count);
+            let subset = build_prefix_on_disk(count);
             subset.save_to_zip_stored(&input_path).unwrap();
         }
 
@@ -537,7 +703,6 @@ fn bench_stream_translate(c: &mut Criterion) {
 /// Uses native f16 — no conversion needed.
 /// AABBs are precomputed once per subset (matching trx-cpp's caching strategy).
 fn bench_query_aabb(c: &mut Criterion) {
-    let reference = get_reference();
     let counts = streamline_counts();
     let slabs = build_slabs();
 
@@ -546,24 +711,32 @@ fn bench_query_aabb(c: &mut Criterion) {
     group.sample_size(10);
 
     for &count in &counts {
-        if count > reference.nb_streamlines() {
-            continue;
-        }
+        // Measure RSS before dataset setup to capture physical footprint.
+        let rss_before_setup = get_current_rss_kb();
 
-        eprintln!("Building f16 subset with {count} streamlines for query_aabb...");
-        let subset = build_subset_f16(reference, count);
+        eprintln!("Building on-disk f16 subset with {count} streamlines for query_aabb...");
+        let subset = build_prefix_on_disk(count);
 
         // Precompute AABBs once, matching trx-cpp's build_streamline_aabbs() cache.
         eprintln!("  Precomputing streamline AABBs...");
         let aabb_start = Instant::now();
         let aabbs = trx_rs::ops::subset::build_streamline_aabbs(&subset);
         let aabb_ms = aabb_start.elapsed().as_secs_f64() * 1000.0;
-        eprintln!("  AABBs built in {aabb_ms:.1} ms");
+
+        let rss_after_setup = get_current_rss_kb();
+        let dataset_rss_kb = rss_after_setup.saturating_sub(rss_before_setup);
+        eprintln!(
+            "  AABBs built in {aabb_ms:.1} ms  (dataset footprint: {:.0} MB)",
+            dataset_rss_kb as f64 / 1024.0
+        );
 
         group.throughput(Throughput::Elements(count as u64));
         group.bench_with_input(BenchmarkId::new("f16", count), &aabbs, |b, aabbs| {
             let mut first_iter = true;
             b.iter(|| {
+                // Measure RSS delta during query phase, matching trx-cpp.
+                let rss_iter_start = get_current_rss_kb();
+
                 let mut total_hits = 0usize;
                 let mut slab_times_ms = Vec::with_capacity(SLAB_COUNT);
 
@@ -573,6 +746,8 @@ fn bench_query_aabb(c: &mut Criterion) {
                     slab_times_ms.push(slab_start.elapsed().as_secs_f64() * 1000.0);
                     total_hits += hits.len();
                 }
+
+                let query_rss_delta = get_current_rss_kb().saturating_sub(rss_iter_start);
 
                 if first_iter {
                     write_query_timings(count, &slab_times_ms);
@@ -598,6 +773,8 @@ fn bench_query_aabb(c: &mut Criterion) {
                             ("query_p50_ms", p50),
                             ("query_p95_ms", p95),
                             ("aabb_build_ms", aabb_ms),
+                            ("max_rss_kb", query_rss_delta as f64),
+                            ("dataset_rss_kb", dataset_rss_kb as f64),
                         ],
                     );
                     first_iter = false;
@@ -615,7 +792,6 @@ fn bench_query_aabb(c: &mut Criterion) {
 
 /// Benchmark: Subset extraction (pick every 10th streamline).
 fn bench_subset(c: &mut Criterion) {
-    let reference = get_reference();
     let counts = streamline_counts();
 
     let mut group = c.benchmark_group("subset_streamlines");
@@ -623,12 +799,8 @@ fn bench_subset(c: &mut Criterion) {
     group.sample_size(10);
 
     for &count in &counts {
-        if count > reference.nb_streamlines() {
-            continue;
-        }
-
-        eprintln!("Building f16 subset with {count} streamlines for subset_bench...");
-        let subset = build_subset_f16(reference, count);
+        eprintln!("Building on-disk f16 subset with {count} streamlines for subset_bench...");
+        let subset = build_prefix_on_disk(count);
         let indices: Vec<usize> = (0..subset.nb_streamlines()).step_by(10).collect();
 
         group.throughput(Throughput::Elements(count as u64));
@@ -649,7 +821,6 @@ fn bench_subset(c: &mut Criterion) {
 
 /// Benchmark: Iteration over all streamlines (simulating a processing pipeline).
 fn bench_iterate(c: &mut Criterion) {
-    let reference = get_reference();
     let counts = streamline_counts();
 
     let mut group = c.benchmark_group("iterate_streamlines");
@@ -657,12 +828,8 @@ fn bench_iterate(c: &mut Criterion) {
     group.sample_size(10);
 
     for &count in &counts {
-        if count > reference.nb_streamlines() {
-            continue;
-        }
-
-        eprintln!("Building f16 subset with {count} streamlines for iterate_bench...");
-        let subset = build_subset_f16(reference, count);
+        eprintln!("Building on-disk f16 subset with {count} streamlines for iterate_bench...");
+        let subset = build_prefix_on_disk(count);
 
         group.throughput(Throughput::Elements(count as u64));
         group.bench_with_input(BenchmarkId::new("f16", count), &subset, |b, trx| {
