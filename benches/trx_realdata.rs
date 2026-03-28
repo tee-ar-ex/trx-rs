@@ -38,7 +38,10 @@ fn get_current_rss_kb() -> u64 {
     // mach2 crate doesn't expose mach_task_basic_info, so we define it inline.
     #[repr(C)]
     #[derive(Copy, Clone)]
-    struct Timeval { tv_sec: i64, tv_usec: i32 }
+    struct Timeval {
+        tv_sec: i64,
+        tv_usec: i32,
+    }
     #[repr(C)]
     struct MachTaskBasicInfo {
         virtual_size: u64,
@@ -61,9 +64,19 @@ fn get_current_rss_kb() -> u64 {
     }
     unsafe {
         let mut info: MachTaskBasicInfo = std::mem::zeroed();
-        let mut count = (std::mem::size_of::<MachTaskBasicInfo>() / std::mem::size_of::<u32>()) as u32;
-        let kr = task_info(mach_task_self(), MACH_TASK_BASIC_INFO, &mut info, &mut count);
-        if kr == 0 { info.resident_size as u64 / 1024 } else { 0 }
+        let mut count =
+            (std::mem::size_of::<MachTaskBasicInfo>() / std::mem::size_of::<u32>()) as u32;
+        let kr = task_info(
+            mach_task_self(),
+            MACH_TASK_BASIC_INFO,
+            &mut info,
+            &mut count,
+        );
+        if kr == 0 {
+            info.resident_size / 1024
+        } else {
+            0
+        }
     }
 }
 
@@ -82,7 +95,9 @@ fn get_current_rss_kb() -> u64 {
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "linux")))]
-fn get_current_rss_kb() -> u64 { 0 }
+fn get_current_rss_kb() -> u64 {
+    0
+}
 
 // ── Constants matching trx-cpp ──────────────────────────────────────
 
@@ -288,7 +303,10 @@ fn get_reference_dir() -> &'static (PathBuf, usize, usize) {
         let header = trx_rs::Header::from_file(&dir_path.join("header.json")).unwrap();
         let nb_sl = header.nb_streamlines as usize;
         let nb_v = header.nb_vertices as usize;
-        eprintln!("  {nb_sl} streamlines, {nb_v} vertices  (dir: {})", dir_path.display());
+        eprintln!(
+            "  {nb_sl} streamlines, {nb_v} vertices  (dir: {})",
+            dir_path.display()
+        );
         (dir_path, nb_sl, nb_v)
     })
 }
@@ -320,33 +338,9 @@ fn build_slabs() -> Vec<([f64; 3], [f64; 3])> {
         .map(|i| {
             let z_lo = FOV_MIN_Z + i as f64 * step;
             let z_hi = z_lo + SLAB_THICKNESS_MM;
-            (
-                [FOV_MIN_X, FOV_MIN_Y, z_lo],
-                [FOV_MAX_X, FOV_MAX_Y, z_hi],
-            )
+            ([FOV_MIN_X, FOV_MIN_Y, z_lo], [FOV_MAX_X, FOV_MAX_Y, z_hi])
         })
         .collect()
-}
-
-/// Truncate all array files in a directory to `row_count` rows,
-/// parsing `{name}.{ncols}.{dtype}` filenames to compute byte sizes.
-fn truncate_array_dir(dir: &Path, row_count: usize) {
-    if !dir.exists() {
-        return;
-    }
-    for entry in std::fs::read_dir(dir).unwrap() {
-        let entry = entry.unwrap();
-        let path = entry.path();
-        if !path.is_file() {
-            continue;
-        }
-        let fname = path.file_name().unwrap().to_str().unwrap();
-        if let Ok(parsed) = trx_rs::io::filename::TrxFilename::parse(fname) {
-            let new_len = (row_count * parsed.ncols * parsed.dtype.size_of()) as u64;
-            let file = std::fs::File::options().write(true).open(&path).unwrap();
-            file.set_len(new_len).unwrap();
-        }
-    }
 }
 
 /// Build a prefix subset on disk by writing only the needed prefix of each
@@ -421,7 +415,9 @@ fn copy_file_prefix(src: &Path, dst: &Path, n_bytes: usize) {
     while remaining > 0 {
         let to_read = remaining.min(buf.len());
         let n = reader.read(&mut buf[..to_read]).unwrap();
-        if n == 0 { break; }
+        if n == 0 {
+            break;
+        }
         writer.write_all(&buf[..n]).unwrap();
         remaining -= n;
     }
@@ -436,7 +432,9 @@ fn copy_array_dir_prefix(src_dir: &Path, dst_dir: &Path, row_count: usize) {
     for entry in std::fs::read_dir(src_dir).unwrap() {
         let entry = entry.unwrap();
         let path = entry.path();
-        if !path.is_file() { continue; }
+        if !path.is_file() {
+            continue;
+        }
         let fname = path.file_name().unwrap().to_str().unwrap();
         if let Ok(parsed) = trx_rs::io::filename::TrxFilename::parse(fname) {
             let n_bytes = row_count * parsed.ncols * parsed.dtype.size_of();
@@ -551,8 +549,7 @@ fn bench_save(c: &mut Criterion) {
                     let start = Instant::now();
                     trx.save_to_zip_stored(&out_path).unwrap();
                     let elapsed = start.elapsed();
-                    let file_bytes =
-                        std::fs::metadata(&out_path).map(|m| m.len()).unwrap_or(0);
+                    let file_bytes = std::fs::metadata(&out_path).map(|m| m.len()).unwrap_or(0);
                     record_bench_result(
                         &format!("BM_TrxFileSize_Float16/{}", trx.nb_streamlines()),
                         elapsed.as_secs_f64() * 1000.0,
@@ -650,10 +647,8 @@ fn bench_stream_translate(c: &mut Criterion) {
                     let trx = TrxFile::<f16>::load(path).unwrap();
 
                     // Translate positions: convert to f32, add 1.0, write as f32
-                    let mut stream = TrxStream::<f32>::new(
-                        trx.header.voxel_to_rasmm,
-                        trx.header.dimensions,
-                    );
+                    let mut stream =
+                        TrxStream::<f32>::new(trx.header.voxel_to_rasmm, trx.header.dimensions);
                     for i in 0..trx.nb_streamlines() {
                         let sl = trx.streamline(i);
                         let translated: Vec<[f32; 3]> = sl
@@ -756,8 +751,7 @@ fn bench_query_aabb(c: &mut Criterion) {
                     let mut sorted = slab_times_ms.clone();
                     sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
                     let p50 = sorted[sorted.len() / 2];
-                    let p95_idx =
-                        ((0.95 * sorted.len() as f64).ceil() as usize).saturating_sub(1);
+                    let p95_idx = ((0.95 * sorted.len() as f64).ceil() as usize).saturating_sub(1);
                     let p95 = sorted[p95_idx.min(sorted.len() - 1)];
 
                     record_bench_result(
@@ -871,9 +865,7 @@ fn main() {
     benches();
 
     // Finalize criterion (it writes its own reports).
-    Criterion::default()
-        .configure_from_args()
-        .final_summary();
+    Criterion::default().configure_from_args().final_summary();
 
     // Write our Google Benchmark-compatible JSON.
     write_results_json();

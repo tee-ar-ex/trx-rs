@@ -12,7 +12,7 @@ use crate::trx_file::TrxFile;
 /// or writes directly to disk.
 pub struct TrxStream<P: TrxScalar> {
     positions: Vec<[P; 3]>,
-    offsets: Vec<u64>,
+    offsets: Vec<u32>,
     header: Header,
 }
 
@@ -35,7 +35,7 @@ impl<P: TrxScalar> TrxStream<P> {
     /// Push a single streamline (slice of 3D points).
     pub fn push_streamline(&mut self, points: &[[P; 3]]) {
         self.positions.extend_from_slice(points);
-        self.offsets.push(self.positions.len() as u64);
+        self.offsets.push(self.positions.len() as u32);
         self.header.nb_streamlines += 1;
         self.header.nb_vertices += points.len() as u64;
     }
@@ -79,8 +79,7 @@ mod tests {
 
     #[test]
     fn stream_build_and_finalize() {
-        let mut stream =
-            TrxStream::<f32>::new(Header::identity_affine(), [100, 100, 100]);
+        let mut stream = TrxStream::<f32>::new(Header::identity_affine(), [100, 100, 100]);
 
         stream.push_streamline(&[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]);
         stream.push_streamline(&[[7.0, 8.0, 9.0]]);

@@ -11,6 +11,10 @@ use crate::io::filename::TrxFilename;
 use crate::mmap_backing::MmapBacking;
 use crate::trx_file::{DataArray, TrxFile};
 
+fn offsets_as_u32_bytes(offsets: &[u32]) -> Vec<u8> {
+    crate::mmap_backing::vec_to_bytes(offsets.to_vec())
+}
+
 /// Memory-map a file as read-only.
 fn mmap_file(path: &Path) -> Result<Mmap> {
     let file = fs::File::open(path)?;
@@ -112,7 +116,7 @@ pub fn load_from_directory<P: TrxScalar>(
     let off_parsed = TrxFilename::parse(off_fname)?;
 
     let offsets_mmap = mmap_file(&off_path)?;
-    let offsets_backing = convert_offsets_to_u64(
+    let offsets_backing = convert_offsets_to_u32(
         &offsets_mmap,
         off_parsed.dtype,
         header.nb_streamlines as usize,
@@ -135,9 +139,9 @@ pub fn load_from_directory<P: TrxScalar>(
     ))
 }
 
-/// Convert offset bytes to u64, handling uint32→u64 promotion and
+/// Convert offset bytes to u32, handling uint64→u32 narrowing and
 /// ensuring the sentinel value (nb_vertices) is present.
-fn convert_offsets_to_u64(
+fn convert_offsets_to_u32(
     mmap: &Mmap,
     dtype: DType,
     nb_streamlines: usize,
@@ -149,14 +153,29 @@ fn convert_offsets_to_u64(
             // Check if sentinel is present
             if values.len() == nb_streamlines {
                 // Missing sentinel — append nb_vertices
-                let mut owned = values.to_vec();
-                owned.push(nb_vertices as u64);
+                let mut owned: Vec<u32> = values
+                    .iter()
+                    .copied()
+                    .map(|value| {
+                        u32::try_from(value).map_err(|_| {
+                            TrxError::Format(format!("offset {value} exceeds uint32 range"))
+                        })
+                    })
+                    .collect::<Result<_>>()?;
+                owned.push(nb_vertices as u32);
                 let bytes: Vec<u8> = crate::mmap_backing::vec_to_bytes(owned);
                 Ok(MmapBacking::Owned(bytes))
             } else if values.len() == nb_streamlines + 1 {
-                // Sentinel present — use mmap directly
-                // Sentinel present — copy bytes to owned (Mmap is not Clone)
-                Ok(MmapBacking::Owned(mmap.as_ref().to_vec()))
+                let owned: Vec<u32> = values
+                    .iter()
+                    .copied()
+                    .map(|value| {
+                        u32::try_from(value).map_err(|_| {
+                            TrxError::Format(format!("offset {value} exceeds uint32 range"))
+                        })
+                    })
+                    .collect::<Result<_>>()?;
+                Ok(MmapBacking::Owned(crate::mmap_backing::vec_to_bytes(owned)))
             } else {
                 Err(TrxError::Format(format!(
                     "unexpected offset count: {} (expected {} or {})",
@@ -168,9 +187,9 @@ fn convert_offsets_to_u64(
         }
         DType::UInt32 => {
             let values: &[u32] = cast_slice(mmap.as_ref());
-            let mut out: Vec<u64> = values.iter().map(|&v| v as u64).collect();
+            let mut out: Vec<u32> = values.to_vec();
             if out.len() == nb_streamlines {
-                out.push(nb_vertices as u64);
+                out.push(nb_vertices as u32);
             }
             let bytes: Vec<u8> = crate::mmap_backing::vec_to_bytes(out);
             Ok(MmapBacking::Owned(bytes))
@@ -180,7 +199,6 @@ fn convert_offsets_to_u64(
         ))),
     }
 }
-
 
 /// Save a `TrxFile<P>` to an uncompressed directory.
 pub fn save_to_directory<P: TrxScalar>(trx: &TrxFile<P>, dir: &Path) -> Result<()> {
@@ -193,9 +211,9 @@ pub fn save_to_directory<P: TrxScalar>(trx: &TrxFile<P>, dir: &Path) -> Result<(
     let pos_filename = format!("positions.3.{}", P::DTYPE.name());
     fs::write(dir.join(&pos_filename), trx.positions_bytes())?;
 
-    // Offsets
-    let offsets_filename = "offsets.1.uint64";
-    let offsets_bytes: &[u8] = cast_slice(trx.offsets());
+    // Offsets default to compact uint32 on disk.
+    let offsets_filename = "offsets.1.uint32";
+    let offsets_bytes = offsets_as_u32_bytes(trx.offsets());
     fs::write(dir.join(offsets_filename), offsets_bytes)?;
 
     // DPS

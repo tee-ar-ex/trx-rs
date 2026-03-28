@@ -73,10 +73,8 @@ pub fn union<P: TrxScalar>(a: &TrxFile<P>, b: &TrxFile<P>) -> Result<TrxFile<P>>
         .map(|i| streamline_key(a.streamline(i)))
         .collect();
 
-    let mut stream = crate::stream::TrxStream::<P>::new(
-        a.header.voxel_to_rasmm,
-        a.header.dimensions,
-    );
+    let mut stream =
+        crate::stream::TrxStream::<P>::new(a.header.voxel_to_rasmm, a.header.dimensions);
 
     // Add all streamlines from a
     for i in 0..a.nb_streamlines() {

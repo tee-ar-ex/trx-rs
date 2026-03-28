@@ -14,10 +14,7 @@ use std::sync::Once;
 use trx_rs::{AnyTrxFile, DType, TrxFile};
 
 const BASE_URL: &str = "https://github.com/tee-ar-ex/trx-test-data/releases/download/v0.1.0";
-const ARCHIVES: &[&str] = &[
-    "gold_standard.zip",
-    "memmap_test_data.zip",
-];
+const ARCHIVES: &[&str] = &["gold_standard.zip", "memmap_test_data.zip"];
 
 /// Download and extract test data once, return the cache directory.
 fn ensure_test_data() -> PathBuf {
@@ -37,7 +34,9 @@ fn ensure_test_data() -> PathBuf {
             let url = format!("{BASE_URL}/{archive_name}");
             eprintln!("Downloading {url} ...");
 
-            let response = ureq::get(&url).call().expect("failed to download test data");
+            let response = ureq::get(&url)
+                .call()
+                .expect("failed to download test data");
 
             let mut bytes = Vec::new();
             response
@@ -47,8 +46,7 @@ fn ensure_test_data() -> PathBuf {
                 .expect("failed to read response body");
 
             let cursor = std::io::Cursor::new(bytes);
-            let mut archive =
-                zip::ZipArchive::new(cursor).expect("failed to open downloaded zip");
+            let mut archive = zip::ZipArchive::new(cursor).expect("failed to open downloaded zip");
 
             for i in 0..archive.len() {
                 let mut entry = archive.by_index(i).unwrap();
@@ -327,8 +325,7 @@ fn any_trx_detect_dtype_gs() {
 fn any_trx_detect_dtype_gs_dir() {
     let gs_dir = gold_standard_dir();
 
-    let dtype =
-        trx_rs::any_trx_file::detect_positions_dtype(&gs_dir.join("gs_fldr.trx")).unwrap();
+    let dtype = trx_rs::any_trx_file::detect_positions_dtype(&gs_dir.join("gs_fldr.trx")).unwrap();
     assert_eq!(dtype, DType::Float32);
 }
 

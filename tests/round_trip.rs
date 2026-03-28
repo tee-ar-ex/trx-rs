@@ -87,3 +87,29 @@ fn positions_bytes_for_gpu() {
     assert_eq!(positions.len(), 6);
     assert_eq!(positions, trx.positions());
 }
+
+#[test]
+fn zip_round_trip_writes_uint32_offsets_by_default() {
+    let original = create_test_trx(3, 7);
+    let dir = tempfile::TempDir::new().unwrap();
+    let zip_path = dir.path().join("test.trx");
+
+    original.save_to_zip(&zip_path).unwrap();
+
+    let file = std::fs::File::open(&zip_path).unwrap();
+    let mut archive = zip::ZipArchive::new(file).unwrap();
+    assert!(archive.by_name("offsets.1.uint32").is_ok());
+    assert!(archive.by_name("offsets.1.uint64").is_err());
+}
+
+#[test]
+fn directory_round_trip_writes_uint32_offsets_by_default() {
+    let original = create_test_trx(3, 7);
+    let dir = tempfile::TempDir::new().unwrap();
+    let out_dir = dir.path().join("test.trxd");
+
+    original.save_to_directory(&out_dir).unwrap();
+
+    assert!(out_dir.join("offsets.1.uint32").exists());
+    assert!(!out_dir.join("offsets.1.uint64").exists());
+}

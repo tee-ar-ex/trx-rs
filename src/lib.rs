@@ -20,7 +20,7 @@ pub mod vertex;
 // Re-exports for convenience
 pub use any_trx_file::{AnyTrxFile, PositionsRef};
 pub use dtype::{DType, TrxScalar};
-pub use error::{TrxError, Result};
+pub use error::{Result, TrxError};
 pub use header::Header;
 pub use mmap_backing::MmapBacking;
 pub use stream::TrxStream;

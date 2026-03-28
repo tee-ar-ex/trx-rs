@@ -7,6 +7,10 @@ use crate::dtype::TrxScalar;
 use crate::error::Result;
 use crate::trx_file::TrxFile;
 
+fn offsets_as_u32_bytes(offsets: &[u32]) -> Vec<u8> {
+    crate::mmap_backing::vec_to_bytes(offsets.to_vec())
+}
+
 /// Load a TRX file from a `.trx` zip archive.
 ///
 /// Extracts the archive to a temporary directory, then delegates to the
@@ -64,10 +68,10 @@ pub fn save_to_zip_with<P: TrxScalar>(
     zip.start_file(&pos_filename, options)?;
     zip.write_all(trx.positions_bytes())?;
 
-    // Offsets
-    zip.start_file("offsets.1.uint64", options)?;
-    let offsets_bytes: &[u8] = bytemuck::cast_slice(trx.offsets());
-    zip.write_all(offsets_bytes)?;
+    // Offsets default to compact uint32 on disk.
+    zip.start_file("offsets.1.uint32", options)?;
+    let offsets_bytes = offsets_as_u32_bytes(trx.offsets());
+    zip.write_all(&offsets_bytes)?;
 
     // DPS
     write_data_map(&mut zip, "dps", &trx.dps, options)?;

@@ -21,7 +21,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-trx-rs = { git = "https://github.com/YOUR_USERNAME/trx-rs" }
+trx-rs = { git = "https://github.com/tee-ar-ex/trx-rs" }
 ```
 
 ### Load and iterate streamlines
@@ -118,12 +118,22 @@ let only_a = difference(&trx_a, &trx_b)?;
 ## Testing
 
 ```bash
-# Unit tests (synthetic data, fast)
-cargo test
+# Full test suite
+cargo test --workspace
 
-# Integration tests (downloads gold-standard test data on first run)
-cargo test -- --ignored
+# Formatting check
+cargo fmt --check
+
+# Lint with warnings denied
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+# Coverage report (requires cargo-llvm-cov)
+cargo llvm-cov --workspace --html
 ```
+
+Real-data integration tests download the fixture archives on first run and cache
+them in `target/test_data/`. Set `TRX_TEST_DATA_DIR` to reuse an existing copy
+of the fixture data instead of downloading it again.
 
 ## Benchmarks
 

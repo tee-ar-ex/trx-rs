@@ -30,8 +30,8 @@ pub struct TrxFile<P: TrxScalar> {
     /// Positions backing — `N × 3` elements of type `P`.
     positions_backing: MmapBacking,
 
-    /// Offsets backing — `(nb_streamlines + 1)` u64 values.
-    /// Always stored as u64 internally (uint32 offsets are converted on load).
+    /// Offsets backing — `(nb_streamlines + 1)` u32 values.
+    /// TRX offsets are normalized to uint32 internally.
     offsets_backing: MmapBacking,
 
     /// Data per streamline: name → DataArray with `nb_streamlines` rows.
@@ -111,9 +111,9 @@ impl<P: TrxScalar> TrxFile<P> {
 
     // ── Offsets ─────────────────────────────────────────────────────
 
-    /// Offsets as a slice of `u64`. Length is `nb_streamlines + 1`.
+    /// Offsets as a slice of `u32`. Length is `nb_streamlines + 1`.
     /// The i-th streamline spans `positions[offsets[i]..offsets[i+1]]`.
-    pub fn offsets(&self) -> &[u64] {
+    pub fn offsets(&self) -> &[u32] {
         self.offsets_backing.cast_slice()
     }
 
@@ -149,10 +149,7 @@ impl<P: TrxScalar> TrxFile<P> {
     /// Length (number of points) of each streamline.
     pub fn streamline_lengths(&self) -> Vec<usize> {
         let offsets = self.offsets();
-        offsets
-            .windows(2)
-            .map(|w| (w[1] - w[0]) as usize)
-            .collect()
+        offsets.windows(2).map(|w| (w[1] - w[0]) as usize).collect()
     }
 
     // ── DPS / DPV / Group access ────────────────────────────────────
@@ -251,7 +248,7 @@ impl<P: TrxScalar> std::fmt::Debug for TrxFile<P> {
 /// Iterator over streamlines, yielding `&[[P; 3]]` slices.
 pub struct StreamlineIter<'a, P: TrxScalar> {
     positions: &'a [[P; 3]],
-    offsets: &'a [u64],
+    offsets: &'a [u32],
     index: usize,
 }
 

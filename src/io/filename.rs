@@ -69,10 +69,10 @@ mod tests {
 
     #[test]
     fn parse_offsets() {
-        let f = TrxFilename::parse("offsets.1.uint64").unwrap();
+        let f = TrxFilename::parse("offsets.1.uint32").unwrap();
         assert_eq!(f.name, "offsets");
         assert_eq!(f.ncols, 1);
-        assert_eq!(f.dtype, DType::UInt64);
+        assert_eq!(f.dtype, DType::UInt32);
     }
 
     #[test]

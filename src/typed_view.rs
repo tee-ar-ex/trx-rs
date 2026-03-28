@@ -16,7 +16,7 @@ impl<'a, T: Pod> TypedView2D<'a, T> {
     /// Panics if `data.len()` is not divisible by `ncols`.
     pub fn new(data: &'a [T], ncols: usize) -> Self {
         assert!(
-            ncols > 0 && data.len() % ncols == 0,
+            ncols > 0 && data.len().is_multiple_of(ncols),
             "data length {} is not divisible by ncols {}",
             data.len(),
             ncols,
@@ -66,7 +66,7 @@ pub struct TypedView2DMut<'a, T: Pod> {
 impl<'a, T: Pod> TypedView2DMut<'a, T> {
     pub fn new(data: &'a mut [T], ncols: usize) -> Self {
         assert!(
-            ncols > 0 && data.len() % ncols == 0,
+            ncols > 0 && data.len().is_multiple_of(ncols),
             "data length {} is not divisible by ncols {}",
             data.len(),
             ncols,

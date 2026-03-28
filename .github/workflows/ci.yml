@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  TRX_TEST_DATA_CACHE_VERSION: v1
+
+jobs:
+  ci:
+    name: Rust CI
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Cargo artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Cache test fixtures
+        uses: actions/cache@v4
+        with:
+          path: target/test_data
+          key: ${{ runner.os }}-trx-test-data-${{ env.TRX_TEST_DATA_CACHE_VERSION }}
+
+      - name: Check formatting
+        run: cargo fmt --check
+
+      - name: Run clippy
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+      - name: Run tests
+        run: cargo test --workspace
