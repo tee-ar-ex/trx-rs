@@ -648,7 +648,7 @@ fn bench_stream_translate(c: &mut Criterion) {
 
                     // Translate positions: convert to f32, add 1.0, write as f32
                     let mut stream =
-                        TrxStream::<f32>::new(trx.header.voxel_to_rasmm, trx.header.dimensions);
+                        TrxStream::<f32>::new(trx.header().voxel_to_rasmm, trx.header().dimensions);
                     for i in 0..trx.nb_streamlines() {
                         let sl = trx.streamline(i);
                         let translated: Vec<[f32; 3]> = sl

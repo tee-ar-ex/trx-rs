@@ -49,9 +49,13 @@ impl TrxFilename {
         )))
     }
 
-    /// Format back to `{name}.{ncols}.{dtype}`.
+    /// Format back to `{name}.{dtype}` for 1D arrays or `{name}.{ncols}.{dtype}` otherwise.
     pub fn to_filename(&self) -> String {
-        format!("{}.{}.{}", self.name, self.ncols, self.dtype.name())
+        if self.ncols == 1 {
+            format!("{}.{}", self.name, self.dtype.name())
+        } else {
+            format!("{}.{}.{}", self.name, self.ncols, self.dtype.name())
+        }
     }
 }
 
@@ -82,6 +86,7 @@ mod tests {
             ncols: 1,
             dtype: DType::Float32,
         };
+        assert_eq!(f.to_filename(), "fa.float32");
         assert_eq!(TrxFilename::parse(&f.to_filename()).unwrap(), f);
     }
 

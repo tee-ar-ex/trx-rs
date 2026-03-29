@@ -98,8 +98,8 @@ fn zip_round_trip_writes_uint32_offsets_by_default() {
 
     let file = std::fs::File::open(&zip_path).unwrap();
     let mut archive = zip::ZipArchive::new(file).unwrap();
-    assert!(archive.by_name("offsets.1.uint32").is_ok());
-    assert!(archive.by_name("offsets.1.uint64").is_err());
+    assert!(archive.by_name("offsets.uint32").is_ok());
+    assert!(archive.by_name("offsets.uint64").is_err());
 }
 
 #[test]
@@ -110,6 +110,6 @@ fn directory_round_trip_writes_uint32_offsets_by_default() {
 
     original.save_to_directory(&out_dir).unwrap();
 
-    assert!(out_dir.join("offsets.1.uint32").exists());
-    assert!(!out_dir.join("offsets.1.uint64").exists());
+    assert!(out_dir.join("offsets.uint32").exists());
+    assert!(!out_dir.join("offsets.uint64").exists());
 }

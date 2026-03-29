@@ -5,7 +5,7 @@ use std::path::Path;
 use crate::error::Result;
 
 /// TRX file header (stored as JSON in `header.json`).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Header {
     /// 4x4 affine matrix mapping voxel coordinates to RAS+mm space.
     /// Stored row-major as `[[f64; 4]; 4]`.

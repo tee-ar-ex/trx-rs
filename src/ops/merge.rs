@@ -1,7 +1,8 @@
 use crate::dtype::TrxScalar;
 use crate::error::{Result, TrxError};
+use crate::mmap_backing::{vec_to_bytes, MmapBacking};
 use crate::stream::TrxStream;
-use crate::trx_file::TrxFile;
+use crate::trx_file::{DataArray, TrxFile};
 
 /// Merge multiple TRX files into one.
 ///
@@ -16,92 +17,83 @@ pub fn merge_trx_shards<P: TrxScalar>(shards: &[&TrxFile<P>]) -> Result<TrxFile<
     let first = shards[0];
 
     // Build merged positions and offsets via TrxStream
-    let mut stream = TrxStream::<P>::new(first.header.voxel_to_rasmm, first.header.dimensions);
+    let mut stream = TrxStream::<P>::new(first.header().voxel_to_rasmm, first.header().dimensions);
 
     for shard in shards {
-        for i in 0..shard.nb_streamlines() {
-            stream.push_streamline(shard.streamline(i));
+        for streamline in shard.streamlines() {
+            stream.push_streamline(streamline);
         }
     }
 
     let mut merged = stream.finalize();
 
     // Merge DPS: only fields present in ALL shards
-    let common_dps: Vec<String> = first
-        .dps
-        .keys()
-        .filter(|k| shards.iter().all(|s| s.dps.contains_key(*k)))
-        .cloned()
-        .collect();
-
-    for name in &common_dps {
-        let first_arr = &first.dps[name];
-        let mut bytes = Vec::new();
-        for shard in shards {
-            bytes.extend_from_slice(shard.dps[name].backing.as_bytes());
-        }
-        merged.dps.insert(
-            name.clone(),
-            crate::trx_file::DataArray {
-                backing: crate::mmap_backing::MmapBacking::Owned(bytes),
-                ncols: first_arr.ncols,
-                dtype: first_arr.dtype,
-            },
+    for name in common_field_names(first.dps_arrays(), shards.iter().map(|shard| shard.dps_arrays())) {
+        let first_arr = &first.dps_arrays()[&name];
+        let bytes = concatenate_arrays(shards.iter().map(|shard| &shard.dps_arrays()[&name]));
+        merged.dps_arrays_mut().insert(
+            name,
+            DataArray::from_backing(MmapBacking::Owned(bytes), first_arr.ncols(), first_arr.dtype()),
         );
     }
 
     // Merge DPV: only fields present in ALL shards
-    let common_dpv: Vec<String> = first
-        .dpv
-        .keys()
-        .filter(|k| shards.iter().all(|s| s.dpv.contains_key(*k)))
-        .cloned()
-        .collect();
-
-    for name in &common_dpv {
-        let first_arr = &first.dpv[name];
-        let mut bytes = Vec::new();
-        for shard in shards {
-            bytes.extend_from_slice(shard.dpv[name].backing.as_bytes());
-        }
-        merged.dpv.insert(
-            name.clone(),
-            crate::trx_file::DataArray {
-                backing: crate::mmap_backing::MmapBacking::Owned(bytes),
-                ncols: first_arr.ncols,
-                dtype: first_arr.dtype,
-            },
+    for name in common_field_names(first.dpv_arrays(), shards.iter().map(|shard| shard.dpv_arrays())) {
+        let first_arr = &first.dpv_arrays()[&name];
+        let bytes = concatenate_arrays(shards.iter().map(|shard| &shard.dpv_arrays()[&name]));
+        merged.dpv_arrays_mut().insert(
+            name,
+            DataArray::from_backing(MmapBacking::Owned(bytes), first_arr.ncols(), first_arr.dtype()),
         );
     }
 
     // Merge groups with index remapping
-    let common_groups: Vec<String> = first
-        .groups
-        .keys()
-        .filter(|k| shards.iter().all(|s| s.groups.contains_key(*k)))
-        .cloned()
-        .collect();
-
-    for name in &common_groups {
+    for name in common_field_names(
+        first.group_arrays(),
+        shards.iter().map(|shard| shard.group_arrays()),
+    ) {
         let mut all_members: Vec<u32> = Vec::new();
         let mut streamline_offset: u32 = 0;
         for shard in shards {
-            let members: &[u32] = shard.groups[name.as_str()].backing.cast_slice();
+            let members: &[u32] = shard.group_arrays()[&name].cast_slice();
             all_members.extend(members.iter().map(|&m| m + streamline_offset));
             streamline_offset += shard.nb_streamlines() as u32;
         }
-        let bytes = crate::mmap_backing::vec_to_bytes(all_members);
-        merged.groups.insert(
-            name.clone(),
-            crate::trx_file::DataArray {
-                backing: crate::mmap_backing::MmapBacking::Owned(bytes),
-                ncols: 1,
-                dtype: crate::dtype::DType::UInt32,
-            },
+        merged.group_arrays_mut().insert(
+            name,
+            DataArray::from_backing(MmapBacking::Owned(vec_to_bytes(all_members)), 1, crate::dtype::DType::UInt32),
         );
     }
 
+    for group in common_field_names(first.dpg_arrays(), shards.iter().map(|shard| shard.dpg_arrays())) {
+        let merged_group = first.dpg_arrays()[&group]
+            .iter()
+            .map(|(name, arr)| (name.clone(), arr.clone_owned()))
+            .collect();
+        merged.dpg_arrays_mut().insert(group, merged_group);
+    }
+
     Ok(merged)
+}
+
+fn common_field_names<'a, T: 'a>(
+    first: &'a std::collections::HashMap<String, T>,
+    others: impl Iterator<Item = &'a std::collections::HashMap<String, T>>,
+) -> Vec<String> {
+    let other_maps: Vec<_> = others.collect();
+    first
+        .keys()
+        .filter(|name| other_maps.iter().all(|map| map.contains_key(*name)))
+        .cloned()
+        .collect()
+}
+
+fn concatenate_arrays<'a>(arrays: impl Iterator<Item = &'a DataArray>) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    for arr in arrays {
+        bytes.extend_from_slice(arr.as_bytes());
+    }
+    bytes
 }
 
 #[cfg(test)]

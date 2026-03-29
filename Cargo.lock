@@ -840,6 +840,7 @@ version = "0.1.0"
 dependencies = [
  "bytemuck",
  "criterion",
+ "flate2",
  "half",
  "memmap2",
  "serde",

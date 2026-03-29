@@ -189,8 +189,8 @@ fn gs_header_values() {
 
     assert!(trx.nb_streamlines() > 0);
     assert!(trx.nb_vertices() > 0);
-    assert_eq!(trx.header.dimensions.len(), 3);
-    assert!(trx.header.dimensions.iter().all(|&d| d > 0));
+    assert_eq!(trx.header().dimensions.len(), 3);
+    assert!(trx.header().dimensions.iter().all(|&d| d > 0));
 }
 
 #[test]
@@ -360,7 +360,7 @@ fn gs_affine_round_trip() {
     for i in 0..4 {
         for j in 0..4 {
             assert!(
-                (trx.header.voxel_to_rasmm[i][j] - reloaded.header.voxel_to_rasmm[i][j]).abs()
+                (trx.header().voxel_to_rasmm[i][j] - reloaded.header().voxel_to_rasmm[i][j]).abs()
                     < 1e-10,
                 "affine mismatch at [{i}][{j}]"
             );

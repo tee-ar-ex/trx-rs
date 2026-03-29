@@ -33,24 +33,22 @@ fn streamline_key<P: TrxScalar>(points: &[[P; 3]]) -> StreamlineKey {
 /// Compute the intersection: streamlines present in both `a` and `b`.
 /// Returns indices into `a`.
 pub fn intersection_indices<P: TrxScalar>(a: &TrxFile<P>, b: &TrxFile<P>) -> Vec<usize> {
-    let b_set: HashSet<StreamlineKey> = (0..b.nb_streamlines())
-        .map(|i| streamline_key(b.streamline(i)))
-        .collect();
+    let b_set: HashSet<StreamlineKey> = b.streamlines().map(streamline_key).collect();
 
-    (0..a.nb_streamlines())
-        .filter(|&i| b_set.contains(&streamline_key(a.streamline(i))))
+    a.streamlines()
+        .enumerate()
+        .filter_map(|(index, streamline)| b_set.contains(&streamline_key(streamline)).then_some(index))
         .collect()
 }
 
 /// Compute the difference: streamlines in `a` but not in `b`.
 /// Returns indices into `a`.
 pub fn difference_indices<P: TrxScalar>(a: &TrxFile<P>, b: &TrxFile<P>) -> Vec<usize> {
-    let b_set: HashSet<StreamlineKey> = (0..b.nb_streamlines())
-        .map(|i| streamline_key(b.streamline(i)))
-        .collect();
+    let b_set: HashSet<StreamlineKey> = b.streamlines().map(streamline_key).collect();
 
-    (0..a.nb_streamlines())
-        .filter(|&i| !b_set.contains(&streamline_key(a.streamline(i))))
+    a.streamlines()
+        .enumerate()
+        .filter_map(|(index, streamline)| (!b_set.contains(&streamline_key(streamline))).then_some(index))
         .collect()
 }
 
@@ -69,23 +67,21 @@ pub fn difference<P: TrxScalar>(a: &TrxFile<P>, b: &TrxFile<P>) -> Result<TrxFil
 /// Union: return a new TrxFile with all unique streamlines from both.
 pub fn union<P: TrxScalar>(a: &TrxFile<P>, b: &TrxFile<P>) -> Result<TrxFile<P>> {
     // Start with all of a, add streamlines from b not already in a
-    let a_set: HashSet<StreamlineKey> = (0..a.nb_streamlines())
-        .map(|i| streamline_key(a.streamline(i)))
-        .collect();
+    let a_set: HashSet<StreamlineKey> = a.streamlines().map(streamline_key).collect();
 
     let mut stream =
-        crate::stream::TrxStream::<P>::new(a.header.voxel_to_rasmm, a.header.dimensions);
+        crate::stream::TrxStream::<P>::new(a.header().voxel_to_rasmm, a.header().dimensions);
 
     // Add all streamlines from a
-    for i in 0..a.nb_streamlines() {
-        stream.push_streamline(a.streamline(i));
+    for streamline in a.streamlines() {
+        stream.push_streamline(streamline);
     }
 
     // Add unique streamlines from b
-    for i in 0..b.nb_streamlines() {
-        let key = streamline_key(b.streamline(i));
+    for streamline in b.streamlines() {
+        let key = streamline_key(streamline);
         if !a_set.contains(&key) {
-            stream.push_streamline(b.streamline(i));
+            stream.push_streamline(streamline);
         }
     }
 

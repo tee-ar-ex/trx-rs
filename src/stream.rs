@@ -4,7 +4,7 @@ use crate::dtype::TrxScalar;
 use crate::error::Result;
 use crate::header::Header;
 use crate::mmap_backing::MmapBacking;
-use crate::trx_file::TrxFile;
+use crate::trx_file::{TrxFile, TrxParts};
 
 /// Incremental builder for constructing a TRX file streamline-by-streamline.
 ///
@@ -55,15 +55,16 @@ impl<P: TrxScalar> TrxStream<P> {
         let pos_bytes = crate::mmap_backing::vec_to_bytes(self.positions);
         let off_bytes = crate::mmap_backing::vec_to_bytes(self.offsets);
 
-        TrxFile::from_parts(
-            self.header,
-            MmapBacking::Owned(pos_bytes),
-            MmapBacking::Owned(off_bytes),
-            Default::default(),
-            Default::default(),
-            Default::default(),
-            None,
-        )
+        TrxFile::from_parts(TrxParts {
+            header: self.header,
+            positions_backing: MmapBacking::Owned(pos_bytes),
+            offsets_backing: MmapBacking::Owned(off_bytes),
+            dps: Default::default(),
+            dpv: Default::default(),
+            groups: Default::default(),
+            dpg: Default::default(),
+            tempdir: None,
+        })
     }
 
     /// Finalize and save to the given path.

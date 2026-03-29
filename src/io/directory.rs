@@ -9,7 +9,7 @@ use crate::error::{Result, TrxError};
 use crate::header::Header;
 use crate::io::filename::TrxFilename;
 use crate::mmap_backing::MmapBacking;
-use crate::trx_file::{DataArray, TrxFile};
+use crate::trx_file::{DataArray, DataPerGroup, TrxFile, TrxParts};
 
 fn offsets_as_u32_bytes(offsets: &[u32]) -> Vec<u8> {
     crate::mmap_backing::vec_to_bytes(offsets.to_vec())
@@ -46,15 +46,33 @@ fn load_data_dir(dir: &Path) -> Result<HashMap<String, DataArray>> {
 
         map.insert(
             parsed.name.clone(),
-            DataArray {
-                backing: MmapBacking::ReadOnly(mmap),
-                ncols: parsed.ncols,
-                dtype: parsed.dtype,
-            },
+            DataArray::from_backing(MmapBacking::ReadOnly(mmap), parsed.ncols, parsed.dtype),
         );
     }
 
     Ok(map)
+}
+
+fn load_dpg_dir(dir: &Path) -> Result<DataPerGroup> {
+    let mut out = HashMap::new();
+    if !dir.exists() {
+        return Ok(out);
+    }
+
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let group_name = entry.file_name().to_string_lossy().to_string();
+        let data = load_data_dir(&path)?;
+        if !data.is_empty() {
+            out.insert(group_name, data);
+        }
+    }
+
+    Ok(out)
 }
 
 /// Find a file matching a given name prefix in a directory, regardless of
@@ -127,16 +145,18 @@ pub fn load_from_directory<P: TrxScalar>(
     let dps = load_data_dir(&dir.join("dps"))?;
     let dpv = load_data_dir(&dir.join("dpv"))?;
     let groups = load_data_dir(&dir.join("groups"))?;
+    let dpg = load_dpg_dir(&dir.join("dpg"))?;
 
-    Ok(TrxFile::from_parts(
+    Ok(TrxFile::from_parts(TrxParts {
         header,
         positions_backing,
         offsets_backing,
         dps,
         dpv,
         groups,
+        dpg,
         tempdir,
-    ))
+    }))
 }
 
 /// Convert offset bytes to u32, handling uint64→u32 narrowing and
@@ -205,25 +225,28 @@ pub fn save_to_directory<P: TrxScalar>(trx: &TrxFile<P>, dir: &Path) -> Result<(
     fs::create_dir_all(dir)?;
 
     // Header
-    trx.header.write_to(&dir.join("header.json"))?;
+    trx.header().write_to(&dir.join("header.json"))?;
 
     // Positions
     let pos_filename = format!("positions.3.{}", P::DTYPE.name());
     fs::write(dir.join(&pos_filename), trx.positions_bytes())?;
 
     // Offsets default to compact uint32 on disk.
-    let offsets_filename = "offsets.1.uint32";
+    let offsets_filename = "offsets.uint32";
     let offsets_bytes = offsets_as_u32_bytes(trx.offsets());
     fs::write(dir.join(offsets_filename), offsets_bytes)?;
 
     // DPS
-    save_data_dir(&trx.dps, &dir.join("dps"))?;
+    save_data_dir(trx.dps_arrays(), &dir.join("dps"))?;
 
     // DPV
-    save_data_dir(&trx.dpv, &dir.join("dpv"))?;
+    save_data_dir(trx.dpv_arrays(), &dir.join("dpv"))?;
 
     // Groups
-    save_data_dir(&trx.groups, &dir.join("groups"))?;
+    save_data_dir(trx.group_arrays(), &dir.join("groups"))?;
+
+    // DPG
+    save_dpg_dir(trx.dpg_arrays(), &dir.join("dpg"))?;
 
     Ok(())
 }
@@ -236,11 +259,22 @@ fn save_data_dir(arrays: &HashMap<String, DataArray>, dir: &Path) -> Result<()> 
     for (name, arr) in arrays {
         let filename = TrxFilename {
             name: name.clone(),
-            ncols: arr.ncols,
-            dtype: arr.dtype,
+            ncols: arr.ncols(),
+            dtype: arr.dtype(),
         }
         .to_filename();
-        fs::write(dir.join(&filename), arr.backing.as_bytes())?;
+        fs::write(dir.join(&filename), arr.as_bytes())?;
+    }
+    Ok(())
+}
+
+fn save_dpg_dir(arrays: &DataPerGroup, dir: &Path) -> Result<()> {
+    if arrays.is_empty() {
+        return Ok(());
+    }
+    fs::create_dir_all(dir)?;
+    for (group, entries) in arrays {
+        save_data_dir(entries, &dir.join(group))?;
     }
     Ok(())
 }
