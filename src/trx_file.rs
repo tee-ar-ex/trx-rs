@@ -11,9 +11,85 @@ use crate::typed_view::TypedView2D;
 /// Named data array with column count and dtype metadata.
 #[derive(Debug)]
 pub struct DataArray {
-    pub backing: MmapBacking,
+    backing: MmapBacking,
+    ncols: usize,
+    dtype: DType,
+}
+
+impl DataArray {
+    pub fn owned_bytes(backing: Vec<u8>, ncols: usize, dtype: DType) -> Self {
+        Self {
+            backing: MmapBacking::Owned(backing),
+            ncols,
+            dtype,
+        }
+    }
+
+    pub(crate) fn from_backing(backing: MmapBacking, ncols: usize, dtype: DType) -> Self {
+        Self {
+            backing,
+            ncols,
+            dtype,
+        }
+    }
+
+    pub fn clone_owned(&self) -> Self {
+        Self::owned_bytes(self.backing.as_bytes().to_vec(), self.ncols, self.dtype)
+    }
+
+    pub fn ncols(&self) -> usize {
+        self.ncols
+    }
+
+    pub fn dtype(&self) -> DType {
+        self.dtype
+    }
+
+    pub fn len_bytes(&self) -> usize {
+        self.backing.len()
+    }
+
+    pub fn nrows(&self) -> usize {
+        let row_bytes = self.ncols * self.dtype.size_of();
+        if row_bytes == 0 {
+            0
+        } else {
+            self.len_bytes() / row_bytes
+        }
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        self.backing.as_bytes()
+    }
+
+    pub fn cast_slice<T: Pod>(&self) -> &[T] {
+        self.backing.cast_slice()
+    }
+
+    pub fn typed_view<T: Pod>(&self) -> TypedView2D<'_, T> {
+        let data: &[T] = cast_slice(self.as_bytes());
+        TypedView2D::new(data, self.ncols)
+    }
+}
+
+pub type DataPerGroup = HashMap<String, HashMap<String, DataArray>>;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DataArrayInfo {
     pub ncols: usize,
+    pub nrows: usize,
     pub dtype: DType,
+}
+
+pub(crate) struct TrxParts {
+    pub header: Header,
+    pub positions_backing: MmapBacking,
+    pub offsets_backing: MmapBacking,
+    pub dps: HashMap<String, DataArray>,
+    pub dpv: HashMap<String, DataArray>,
+    pub groups: HashMap<String, DataArray>,
+    pub dpg: DataPerGroup,
+    pub tempdir: Option<tempfile::TempDir>,
 }
 
 /// Core TRX container, generic over the position scalar type `P`.
@@ -25,23 +101,26 @@ pub struct DataArray {
 /// `_tempdir` must be declared AFTER mmap fields so it is dropped last,
 /// keeping the temp directory alive while mmaps reference files within it.
 pub struct TrxFile<P: TrxScalar> {
-    pub header: Header,
+    header: Header,
 
     /// Positions backing — `N × 3` elements of type `P`.
     positions_backing: MmapBacking,
 
-    /// Offsets backing — `(nb_streamlines + 1)` u64 values.
-    /// Always stored as u64 internally (uint32 offsets are converted on load).
+    /// Offsets backing — `(nb_streamlines + 1)` u32 values.
+    /// TRX offsets are normalized to uint32 internally.
     offsets_backing: MmapBacking,
 
     /// Data per streamline: name → DataArray with `nb_streamlines` rows.
-    pub dps: HashMap<String, DataArray>,
+    dps: HashMap<String, DataArray>,
 
     /// Data per vertex: name → DataArray with `nb_vertices` rows.
-    pub dpv: HashMap<String, DataArray>,
+    dpv: HashMap<String, DataArray>,
 
     /// Groups: name → DataArray of uint32 streamline indices.
-    pub groups: HashMap<String, DataArray>,
+    groups: HashMap<String, DataArray>,
+
+    /// Data per group: group name -> field name -> DataArray.
+    dpg: DataPerGroup,
 
     /// Temp directory handle (for zip-extracted files). Kept alive until drop.
     _tempdir: Option<tempfile::TempDir>,
@@ -59,31 +138,29 @@ impl<P: TrxScalar> TrxFile<P> {
             dps: HashMap::new(),
             dpv: HashMap::new(),
             groups: HashMap::new(),
+            dpg: HashMap::new(),
             _tempdir: None,
             _phantom: std::marker::PhantomData,
         }
     }
 
     /// Construct from pre-built components (used by the loader).
-    pub(crate) fn from_parts(
-        header: Header,
-        positions_backing: MmapBacking,
-        offsets_backing: MmapBacking,
-        dps: HashMap<String, DataArray>,
-        dpv: HashMap<String, DataArray>,
-        groups: HashMap<String, DataArray>,
-        tempdir: Option<tempfile::TempDir>,
-    ) -> Self {
+    pub(crate) fn from_parts(parts: TrxParts) -> Self {
         Self {
-            header,
-            positions_backing,
-            offsets_backing,
-            dps,
-            dpv,
-            groups,
-            _tempdir: tempdir,
+            header: parts.header,
+            positions_backing: parts.positions_backing,
+            offsets_backing: parts.offsets_backing,
+            dps: parts.dps,
+            dpv: parts.dpv,
+            groups: parts.groups,
+            dpg: parts.dpg,
+            _tempdir: parts.tempdir,
             _phantom: std::marker::PhantomData,
         }
+    }
+
+    pub fn header(&self) -> &Header {
+        &self.header
     }
 
     // ── Positions ───────────────────────────────────────────────────
@@ -111,10 +188,14 @@ impl<P: TrxScalar> TrxFile<P> {
 
     // ── Offsets ─────────────────────────────────────────────────────
 
-    /// Offsets as a slice of `u64`. Length is `nb_streamlines + 1`.
+    /// Offsets as a slice of `u32`. Length is `nb_streamlines + 1`.
     /// The i-th streamline spans `positions[offsets[i]..offsets[i+1]]`.
-    pub fn offsets(&self) -> &[u64] {
+    pub fn offsets(&self) -> &[u32] {
         self.offsets_backing.cast_slice()
+    }
+
+    pub fn offsets_vec(&self) -> Vec<u32> {
+        self.offsets().to_vec()
     }
 
     /// Number of streamlines.
@@ -149,41 +230,33 @@ impl<P: TrxScalar> TrxFile<P> {
     /// Length (number of points) of each streamline.
     pub fn streamline_lengths(&self) -> Vec<usize> {
         let offsets = self.offsets();
-        offsets
-            .windows(2)
-            .map(|w| (w[1] - w[0]) as usize)
-            .collect()
+        offsets.windows(2).map(|w| (w[1] - w[0]) as usize).collect()
     }
 
     // ── DPS / DPV / Group access ────────────────────────────────────
 
     /// Get a DPS (data-per-streamline) array cast to type `T`.
     pub fn dps<T: Pod>(&self, name: &str) -> Result<TypedView2D<'_, T>> {
-        let arr = self
-            .dps
-            .get(name)
-            .ok_or_else(|| TrxError::Argument(format!("no DPS named '{name}'")))?;
-        let data: &[T] = cast_slice(arr.backing.as_bytes());
-        Ok(TypedView2D::new(data, arr.ncols))
+        let arr = self.lookup_dps(name)?;
+        Ok(arr.typed_view())
     }
 
     /// Get a DPV (data-per-vertex) array cast to type `T`.
     pub fn dpv<T: Pod>(&self, name: &str) -> Result<TypedView2D<'_, T>> {
-        let arr = self
-            .dpv
-            .get(name)
-            .ok_or_else(|| TrxError::Argument(format!("no DPV named '{name}'")))?;
-        let data: &[T] = cast_slice(arr.backing.as_bytes());
-        Ok(TypedView2D::new(data, arr.ncols))
+        let arr = self.lookup_dpv(name)?;
+        Ok(arr.typed_view())
     }
 
     /// Get group member indices (always u32).
     pub fn group(&self, name: &str) -> Result<&[u32]> {
-        let arr = self
-            .groups
-            .get(name)
-            .ok_or_else(|| TrxError::Argument(format!("no group named '{name}'")))?;
-        Ok(arr.backing.cast_slice())
+        let arr = self.lookup_group(name)?;
+        Ok(arr.cast_slice())
+    }
+
+    /// Get a DPG (data-per-group) array cast to type `T`.
+    pub fn dpg<T: Pod>(&self, group: &str, name: &str) -> Result<TypedView2D<'_, T>> {
+        let arr = self.lookup_dpg(group, name)?;
+        Ok(arr.typed_view())
     }
 
     /// List DPS field names.
@@ -199,6 +272,70 @@ impl<P: TrxScalar> TrxFile<P> {
     /// List group names.
     pub fn group_names(&self) -> Vec<&str> {
         self.groups.keys().map(|s| s.as_str()).collect()
+    }
+
+    /// List DPG group names.
+    pub fn dpg_group_names(&self) -> Vec<&str> {
+        self.dpg.keys().map(|s| s.as_str()).collect()
+    }
+
+    pub fn iter_dps(&self) -> impl Iterator<Item = (&str, DataArrayInfo)> + '_ {
+        self.dps
+            .iter()
+            .map(|(name, arr)| (name.as_str(), arr.info()))
+    }
+
+    pub fn iter_dpv(&self) -> impl Iterator<Item = (&str, DataArrayInfo)> + '_ {
+        self.dpv
+            .iter()
+            .map(|(name, arr)| (name.as_str(), arr.info()))
+    }
+
+    pub fn iter_groups(&self) -> impl Iterator<Item = (&str, &[u32])> + '_ {
+        self.groups
+            .iter()
+            .map(|(name, arr)| (name.as_str(), arr.cast_slice::<u32>()))
+    }
+
+    pub fn dpg_entries(&self, group: &str) -> Result<Vec<(String, DataArrayInfo)>> {
+        let entries = self
+            .dpg
+            .get(group)
+            .ok_or_else(|| TrxError::Argument(format!("no DPG group named '{group}'")))?;
+        Ok(entries
+            .iter()
+            .map(|(name, arr)| (name.clone(), arr.info()))
+            .collect())
+    }
+
+    pub fn dps_info(&self, name: &str) -> Result<DataArrayInfo> {
+        Ok(self.lookup_dps(name)?.info())
+    }
+
+    pub fn dpv_info(&self, name: &str) -> Result<DataArrayInfo> {
+        Ok(self.lookup_dpv(name)?.info())
+    }
+
+    pub fn group_info(&self, name: &str) -> Result<DataArrayInfo> {
+        Ok(self.lookup_group(name)?.info())
+    }
+
+    pub fn dpg_info(&self, group: &str, name: &str) -> Result<DataArrayInfo> {
+        Ok(self.lookup_dpg(group, name)?.info())
+    }
+
+    pub fn scalar_dps_f32(&self, name: &str) -> Result<Vec<f32>> {
+        read_scalar_array_as_f32(self.lookup_dps(name)?, "DPS", name)
+    }
+
+    pub fn scalar_dpv_f32(&self, name: &str) -> Result<Vec<f32>> {
+        read_scalar_array_as_f32(self.lookup_dpv(name)?, "DPV", name)
+    }
+
+    pub fn group_entries_owned(&self) -> Vec<(String, Vec<u32>)> {
+        self.iter_groups()
+            .map(|(name, members)| (name.to_string(), members.to_vec()))
+            .collect()
     }
 
     // ── Loading (convenience) ───────────────────────────────────────
@@ -233,6 +370,66 @@ impl<P: TrxScalar> TrxFile<P> {
             self.save_to_directory(path)
         }
     }
+
+    pub(crate) fn dps_arrays(&self) -> &HashMap<String, DataArray> {
+        &self.dps
+    }
+
+    pub(crate) fn dpv_arrays(&self) -> &HashMap<String, DataArray> {
+        &self.dpv
+    }
+
+    pub(crate) fn group_arrays(&self) -> &HashMap<String, DataArray> {
+        &self.groups
+    }
+
+    pub(crate) fn dpg_arrays(&self) -> &DataPerGroup {
+        &self.dpg
+    }
+
+    pub(crate) fn dps_arrays_mut(&mut self) -> &mut HashMap<String, DataArray> {
+        &mut self.dps
+    }
+
+    pub(crate) fn dpv_arrays_mut(&mut self) -> &mut HashMap<String, DataArray> {
+        &mut self.dpv
+    }
+
+    pub(crate) fn group_arrays_mut(&mut self) -> &mut HashMap<String, DataArray> {
+        &mut self.groups
+    }
+
+    pub(crate) fn dpg_arrays_mut(&mut self) -> &mut DataPerGroup {
+        &mut self.dpg
+    }
+
+    fn lookup_dps(&self, name: &str) -> Result<&DataArray> {
+        self.dps
+            .get(name)
+            .ok_or_else(|| TrxError::Argument(format!("no DPS named '{name}'")))
+    }
+
+    fn lookup_dpv(&self, name: &str) -> Result<&DataArray> {
+        self.dpv
+            .get(name)
+            .ok_or_else(|| TrxError::Argument(format!("no DPV named '{name}'")))
+    }
+
+    fn lookup_group(&self, name: &str) -> Result<&DataArray> {
+        self.groups
+            .get(name)
+            .ok_or_else(|| TrxError::Argument(format!("no group named '{name}'")))
+    }
+
+    fn lookup_dpg(&self, group: &str, name: &str) -> Result<&DataArray> {
+        let group_map = self
+            .dpg
+            .get(group)
+            .ok_or_else(|| TrxError::Argument(format!("no DPG group named '{group}'")))?;
+        group_map
+            .get(name)
+            .ok_or_else(|| TrxError::Argument(format!("no DPG named '{name}' in group '{group}'")))
+    }
 }
 
 impl<P: TrxScalar> std::fmt::Debug for TrxFile<P> {
@@ -244,6 +441,7 @@ impl<P: TrxScalar> std::fmt::Debug for TrxFile<P> {
             .field("dps", &self.dps_names())
             .field("dpv", &self.dpv_names())
             .field("groups", &self.group_names())
+            .field("dpg_group_names", &self.dpg_group_names())
             .finish()
     }
 }
@@ -251,7 +449,7 @@ impl<P: TrxScalar> std::fmt::Debug for TrxFile<P> {
 /// Iterator over streamlines, yielding `&[[P; 3]]` slices.
 pub struct StreamlineIter<'a, P: TrxScalar> {
     positions: &'a [[P; 3]],
-    offsets: &'a [u64],
+    offsets: &'a [u32],
     index: usize,
 }
 
@@ -279,3 +477,73 @@ impl<'a, P: TrxScalar> Iterator for StreamlineIter<'a, P> {
 }
 
 impl<'a, P: TrxScalar> ExactSizeIterator for StreamlineIter<'a, P> {}
+
+impl DataArray {
+    pub fn info(&self) -> DataArrayInfo {
+        DataArrayInfo {
+            ncols: self.ncols,
+            nrows: self.nrows(),
+            dtype: self.dtype,
+        }
+    }
+}
+
+fn read_scalar_array_as_f32(arr: &DataArray, kind: &str, name: &str) -> Result<Vec<f32>> {
+    if arr.ncols() != 1 {
+        return Err(TrxError::Argument(format!(
+            "{kind} '{name}' has {} columns; expected a scalar field",
+            arr.ncols()
+        )));
+    }
+
+    let values = match arr.dtype() {
+        DType::Float16 => arr
+            .cast_slice::<half::f16>()
+            .iter()
+            .map(|value| value.to_f32())
+            .collect(),
+        DType::Float32 => arr.cast_slice::<f32>().to_vec(),
+        DType::Float64 => arr
+            .cast_slice::<f64>()
+            .iter()
+            .map(|&value| value as f32)
+            .collect(),
+        DType::Int8 => arr
+            .cast_slice::<i8>()
+            .iter()
+            .map(|&value| value as f32)
+            .collect(),
+        DType::Int16 => arr
+            .cast_slice::<i16>()
+            .iter()
+            .map(|&value| value as f32)
+            .collect(),
+        DType::Int32 => arr
+            .cast_slice::<i32>()
+            .iter()
+            .map(|&value| value as f32)
+            .collect(),
+        DType::UInt8 => arr
+            .cast_slice::<u8>()
+            .iter()
+            .map(|&value| value as f32)
+            .collect(),
+        DType::UInt16 => arr
+            .cast_slice::<u16>()
+            .iter()
+            .map(|&value| value as f32)
+            .collect(),
+        DType::UInt32 => arr
+            .cast_slice::<u32>()
+            .iter()
+            .map(|&value| value as f32)
+            .collect(),
+        other => {
+            return Err(TrxError::DType(format!(
+                "{kind} '{name}' uses unsupported scalar dtype {other}"
+            )))
+        }
+    };
+
+    Ok(values)
+}

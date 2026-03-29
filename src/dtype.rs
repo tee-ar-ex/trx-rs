@@ -94,61 +94,105 @@ pub trait TrxScalar: Pod + Zeroable + Copy + 'static + fmt::Debug {
 
 impl TrxScalar for f32 {
     const DTYPE: DType = DType::Float32;
-    fn to_f32(self) -> f32 { self }
-    fn to_f64(self) -> f64 { self as f64 }
+    fn to_f32(self) -> f32 {
+        self
+    }
+    fn to_f64(self) -> f64 {
+        self as f64
+    }
 }
 
 impl TrxScalar for f64 {
     const DTYPE: DType = DType::Float64;
-    fn to_f32(self) -> f32 { self as f32 }
-    fn to_f64(self) -> f64 { self }
+    fn to_f32(self) -> f32 {
+        self as f32
+    }
+    fn to_f64(self) -> f64 {
+        self
+    }
 }
 
 impl TrxScalar for f16 {
     const DTYPE: DType = DType::Float16;
-    fn to_f32(self) -> f32 { f16::to_f32(self) }
-    fn to_f64(self) -> f64 { f16::to_f64(self) }
+    fn to_f32(self) -> f32 {
+        f16::to_f32(self)
+    }
+    fn to_f64(self) -> f64 {
+        f16::to_f64(self)
+    }
 }
 
 impl TrxScalar for i8 {
     const DTYPE: DType = DType::Int8;
-    fn to_f32(self) -> f32 { self as f32 }
-    fn to_f64(self) -> f64 { self as f64 }
+    fn to_f32(self) -> f32 {
+        self as f32
+    }
+    fn to_f64(self) -> f64 {
+        self as f64
+    }
 }
 impl TrxScalar for i16 {
     const DTYPE: DType = DType::Int16;
-    fn to_f32(self) -> f32 { self as f32 }
-    fn to_f64(self) -> f64 { self as f64 }
+    fn to_f32(self) -> f32 {
+        self as f32
+    }
+    fn to_f64(self) -> f64 {
+        self as f64
+    }
 }
 impl TrxScalar for i32 {
     const DTYPE: DType = DType::Int32;
-    fn to_f32(self) -> f32 { self as f32 }
-    fn to_f64(self) -> f64 { self as f64 }
+    fn to_f32(self) -> f32 {
+        self as f32
+    }
+    fn to_f64(self) -> f64 {
+        self as f64
+    }
 }
 impl TrxScalar for i64 {
     const DTYPE: DType = DType::Int64;
-    fn to_f32(self) -> f32 { self as f32 }
-    fn to_f64(self) -> f64 { self as f64 }
+    fn to_f32(self) -> f32 {
+        self as f32
+    }
+    fn to_f64(self) -> f64 {
+        self as f64
+    }
 }
 impl TrxScalar for u8 {
     const DTYPE: DType = DType::UInt8;
-    fn to_f32(self) -> f32 { self as f32 }
-    fn to_f64(self) -> f64 { self as f64 }
+    fn to_f32(self) -> f32 {
+        self as f32
+    }
+    fn to_f64(self) -> f64 {
+        self as f64
+    }
 }
 impl TrxScalar for u16 {
     const DTYPE: DType = DType::UInt16;
-    fn to_f32(self) -> f32 { self as f32 }
-    fn to_f64(self) -> f64 { self as f64 }
+    fn to_f32(self) -> f32 {
+        self as f32
+    }
+    fn to_f64(self) -> f64 {
+        self as f64
+    }
 }
 impl TrxScalar for u32 {
     const DTYPE: DType = DType::UInt32;
-    fn to_f32(self) -> f32 { self as f32 }
-    fn to_f64(self) -> f64 { self as f64 }
+    fn to_f32(self) -> f32 {
+        self as f32
+    }
+    fn to_f64(self) -> f64 {
+        self as f64
+    }
 }
 impl TrxScalar for u64 {
     const DTYPE: DType = DType::UInt64;
-    fn to_f32(self) -> f32 { self as f32 }
-    fn to_f64(self) -> f64 { self as f64 }
+    fn to_f32(self) -> f32 {
+        self as f32
+    }
+    fn to_f64(self) -> f64 {
+        self as f64
+    }
 }
 
 #[cfg(test)]

@@ -5,7 +5,11 @@ use zip::write::SimpleFileOptions;
 
 use crate::dtype::TrxScalar;
 use crate::error::Result;
-use crate::trx_file::TrxFile;
+use crate::trx_file::{DataPerGroup, TrxFile};
+
+fn offsets_as_u32_bytes(offsets: &[u32]) -> Vec<u8> {
+    crate::mmap_backing::vec_to_bytes(offsets.to_vec())
+}
 
 /// Load a TRX file from a `.trx` zip archive.
 ///
@@ -55,7 +59,7 @@ pub fn save_to_zip_with<P: TrxScalar>(
         .large_file(true);
 
     // Header
-    let header_json = trx.header.to_json()?;
+    let header_json = trx.header().to_json()?;
     zip.start_file("header.json", options)?;
     zip.write_all(header_json.as_bytes())?;
 
@@ -64,19 +68,22 @@ pub fn save_to_zip_with<P: TrxScalar>(
     zip.start_file(&pos_filename, options)?;
     zip.write_all(trx.positions_bytes())?;
 
-    // Offsets
-    zip.start_file("offsets.1.uint64", options)?;
-    let offsets_bytes: &[u8] = bytemuck::cast_slice(trx.offsets());
-    zip.write_all(offsets_bytes)?;
+    // Offsets default to compact uint32 on disk.
+    zip.start_file("offsets.uint32", options)?;
+    let offsets_bytes = offsets_as_u32_bytes(trx.offsets());
+    zip.write_all(&offsets_bytes)?;
 
     // DPS
-    write_data_map(&mut zip, "dps", &trx.dps, options)?;
+    write_data_map(&mut zip, "dps", trx.dps_arrays(), options)?;
 
     // DPV
-    write_data_map(&mut zip, "dpv", &trx.dpv, options)?;
+    write_data_map(&mut zip, "dpv", trx.dpv_arrays(), options)?;
 
     // Groups
-    write_data_map(&mut zip, "groups", &trx.groups, options)?;
+    write_data_map(&mut zip, "groups", trx.group_arrays(), options)?;
+
+    // DPG
+    write_dpg_map(&mut zip, "dpg", trx.dpg_arrays(), options)?;
 
     zip.finish()?;
     Ok(())
@@ -91,13 +98,35 @@ fn write_data_map<W: Write + std::io::Seek>(
     for (name, arr) in arrays {
         let filename = crate::io::filename::TrxFilename {
             name: name.clone(),
-            ncols: arr.ncols,
-            dtype: arr.dtype,
+            ncols: arr.ncols(),
+            dtype: arr.dtype(),
         }
         .to_filename();
         let entry_name = format!("{prefix}/{filename}");
         zip.start_file(&entry_name, options)?;
-        zip.write_all(arr.backing.as_bytes())?;
+        zip.write_all(arr.as_bytes())?;
+    }
+    Ok(())
+}
+
+fn write_dpg_map<W: Write + std::io::Seek>(
+    zip: &mut zip::ZipWriter<W>,
+    prefix: &str,
+    groups: &DataPerGroup,
+    options: SimpleFileOptions,
+) -> Result<()> {
+    for (group, arrays) in groups {
+        for (name, arr) in arrays {
+            let filename = crate::io::filename::TrxFilename {
+                name: name.clone(),
+                ncols: arr.ncols(),
+                dtype: arr.dtype(),
+            }
+            .to_filename();
+            let entry_name = format!("{prefix}/{group}/{filename}");
+            zip.start_file(&entry_name, options)?;
+            zip.write_all(arr.as_bytes())?;
+        }
     }
     Ok(())
 }

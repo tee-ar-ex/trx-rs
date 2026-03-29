@@ -4,7 +4,7 @@ use crate::dtype::TrxScalar;
 use crate::error::Result;
 use crate::header::Header;
 use crate::mmap_backing::MmapBacking;
-use crate::trx_file::TrxFile;
+use crate::trx_file::{TrxFile, TrxParts};
 
 /// Incremental builder for constructing a TRX file streamline-by-streamline.
 ///
@@ -12,7 +12,7 @@ use crate::trx_file::TrxFile;
 /// or writes directly to disk.
 pub struct TrxStream<P: TrxScalar> {
     positions: Vec<[P; 3]>,
-    offsets: Vec<u64>,
+    offsets: Vec<u32>,
     header: Header,
 }
 
@@ -35,7 +35,7 @@ impl<P: TrxScalar> TrxStream<P> {
     /// Push a single streamline (slice of 3D points).
     pub fn push_streamline(&mut self, points: &[[P; 3]]) {
         self.positions.extend_from_slice(points);
-        self.offsets.push(self.positions.len() as u64);
+        self.offsets.push(self.positions.len() as u32);
         self.header.nb_streamlines += 1;
         self.header.nb_vertices += points.len() as u64;
     }
@@ -55,15 +55,16 @@ impl<P: TrxScalar> TrxStream<P> {
         let pos_bytes = crate::mmap_backing::vec_to_bytes(self.positions);
         let off_bytes = crate::mmap_backing::vec_to_bytes(self.offsets);
 
-        TrxFile::from_parts(
-            self.header,
-            MmapBacking::Owned(pos_bytes),
-            MmapBacking::Owned(off_bytes),
-            Default::default(),
-            Default::default(),
-            Default::default(),
-            None,
-        )
+        TrxFile::from_parts(TrxParts {
+            header: self.header,
+            positions_backing: MmapBacking::Owned(pos_bytes),
+            offsets_backing: MmapBacking::Owned(off_bytes),
+            dps: Default::default(),
+            dpv: Default::default(),
+            groups: Default::default(),
+            dpg: Default::default(),
+            tempdir: None,
+        })
     }
 
     /// Finalize and save to the given path.
@@ -79,8 +80,7 @@ mod tests {
 
     #[test]
     fn stream_build_and_finalize() {
-        let mut stream =
-            TrxStream::<f32>::new(Header::identity_affine(), [100, 100, 100]);
+        let mut stream = TrxStream::<f32>::new(Header::identity_affine(), [100, 100, 100]);
 
         stream.push_streamline(&[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]);
         stream.push_streamline(&[[7.0, 8.0, 9.0]]);

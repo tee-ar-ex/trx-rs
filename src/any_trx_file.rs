@@ -5,7 +5,7 @@ use crate::dtype::DType;
 use crate::error::{Result, TrxError};
 use crate::header::Header;
 use crate::io::filename::TrxFilename;
-use crate::trx_file::TrxFile;
+use crate::trx_file::{DataArrayInfo, TrxFile};
 
 /// References to positions data, dispatched by runtime dtype.
 pub enum PositionsRef<'a> {
@@ -59,9 +59,9 @@ impl AnyTrxFile {
     /// The header.
     pub fn header(&self) -> &Header {
         match self {
-            AnyTrxFile::F16(f) => &f.header,
-            AnyTrxFile::F32(f) => &f.header,
-            AnyTrxFile::F64(f) => &f.header,
+            AnyTrxFile::F16(f) => f.header(),
+            AnyTrxFile::F32(f) => f.header(),
+            AnyTrxFile::F64(f) => f.header(),
         }
     }
 
@@ -95,6 +95,92 @@ impl AnyTrxFile {
             AnyTrxFile::F32(f) => on_f32(f),
             AnyTrxFile::F64(f) => on_f64(f),
         }
+    }
+
+    pub fn positions_f32(&self) -> Vec<[f32; 3]> {
+        match self.positions_ref() {
+            PositionsRef::F16(data) => data
+                .iter()
+                .map(|point| [point[0].to_f32(), point[1].to_f32(), point[2].to_f32()])
+                .collect(),
+            PositionsRef::F32(data) => data.to_vec(),
+            PositionsRef::F64(data) => data
+                .iter()
+                .map(|point| [point[0] as f32, point[1] as f32, point[2] as f32])
+                .collect(),
+        }
+    }
+
+    pub fn offsets_vec(&self) -> Vec<u32> {
+        self.with_typed(
+            TrxFile::<f16>::offsets_vec,
+            TrxFile::<f32>::offsets_vec,
+            TrxFile::<f64>::offsets_vec,
+        )
+    }
+
+    pub fn dpv_entries(&self) -> Vec<(String, DataArrayInfo)> {
+        self.with_typed(
+            |trx| {
+                trx.iter_dpv()
+                    .map(|(name, info)| (name.to_string(), info))
+                    .collect()
+            },
+            |trx| {
+                trx.iter_dpv()
+                    .map(|(name, info)| (name.to_string(), info))
+                    .collect()
+            },
+            |trx| {
+                trx.iter_dpv()
+                    .map(|(name, info)| (name.to_string(), info))
+                    .collect()
+            },
+        )
+    }
+
+    pub fn dps_entries(&self) -> Vec<(String, DataArrayInfo)> {
+        self.with_typed(
+            |trx| {
+                trx.iter_dps()
+                    .map(|(name, info)| (name.to_string(), info))
+                    .collect()
+            },
+            |trx| {
+                trx.iter_dps()
+                    .map(|(name, info)| (name.to_string(), info))
+                    .collect()
+            },
+            |trx| {
+                trx.iter_dps()
+                    .map(|(name, info)| (name.to_string(), info))
+                    .collect()
+            },
+        )
+    }
+
+    pub fn groups_owned(&self) -> Vec<(String, Vec<u32>)> {
+        self.with_typed(
+            TrxFile::<f16>::group_entries_owned,
+            TrxFile::<f32>::group_entries_owned,
+            TrxFile::<f64>::group_entries_owned,
+        )
+    }
+
+    pub fn scalar_dpv_f32(&self, name: &str) -> Result<Vec<f32>> {
+        self.with_typed(
+            |trx| trx.scalar_dpv_f32(name),
+            |trx| trx.scalar_dpv_f32(name),
+            |trx| trx.scalar_dpv_f32(name),
+        )
+    }
+
+    pub fn scalar_dps_f32(&self, name: &str) -> Result<Vec<f32>> {
+        self.with_typed(
+            |trx| trx.scalar_dps_f32(name),
+            |trx| trx.scalar_dps_f32(name),
+            |trx| trx.scalar_dps_f32(name),
+        )
     }
 }
 
