@@ -225,9 +225,8 @@ fn collect_positions_and_offsets<P: TrxScalar>(
             .ok_or_else(|| TrxError::Argument(format!("streamline index {idx} out of bounds")))?;
         new_positions.extend_from_slice(&positions[window[0] as usize..window[1] as usize]);
         new_offsets.push(
-            u32::try_from(new_positions.len()).map_err(|_| {
-                TrxError::Argument("subset would exceed u32::MAX vertices".into())
-            })?,
+            u32::try_from(new_positions.len())
+                .map_err(|_| TrxError::Argument("subset would exceed u32::MAX vertices".into()))?,
         );
     }
 

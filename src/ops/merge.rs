@@ -28,22 +28,36 @@ pub fn merge_trx_shards<P: TrxScalar>(shards: &[&TrxFile<P>]) -> Result<TrxFile<
     let mut merged = stream.finalize();
 
     // Merge DPS: only fields present in ALL shards
-    for name in common_field_names(first.dps_arrays(), shards.iter().map(|shard| shard.dps_arrays())) {
+    for name in common_field_names(
+        first.dps_arrays(),
+        shards.iter().map(|shard| shard.dps_arrays()),
+    ) {
         let first_arr = &first.dps_arrays()[&name];
         let bytes = concatenate_arrays(shards.iter().map(|shard| &shard.dps_arrays()[&name]));
         merged.dps_arrays_mut().insert(
             name,
-            DataArray::from_backing(MmapBacking::Owned(bytes), first_arr.ncols(), first_arr.dtype()),
+            DataArray::from_backing(
+                MmapBacking::Owned(bytes),
+                first_arr.ncols(),
+                first_arr.dtype(),
+            ),
         );
     }
 
     // Merge DPV: only fields present in ALL shards
-    for name in common_field_names(first.dpv_arrays(), shards.iter().map(|shard| shard.dpv_arrays())) {
+    for name in common_field_names(
+        first.dpv_arrays(),
+        shards.iter().map(|shard| shard.dpv_arrays()),
+    ) {
         let first_arr = &first.dpv_arrays()[&name];
         let bytes = concatenate_arrays(shards.iter().map(|shard| &shard.dpv_arrays()[&name]));
         merged.dpv_arrays_mut().insert(
             name,
-            DataArray::from_backing(MmapBacking::Owned(bytes), first_arr.ncols(), first_arr.dtype()),
+            DataArray::from_backing(
+                MmapBacking::Owned(bytes),
+                first_arr.ncols(),
+                first_arr.dtype(),
+            ),
         );
     }
 
@@ -61,11 +75,18 @@ pub fn merge_trx_shards<P: TrxScalar>(shards: &[&TrxFile<P>]) -> Result<TrxFile<
         }
         merged.group_arrays_mut().insert(
             name,
-            DataArray::from_backing(MmapBacking::Owned(vec_to_bytes(all_members)), 1, crate::dtype::DType::UInt32),
+            DataArray::from_backing(
+                MmapBacking::Owned(vec_to_bytes(all_members)),
+                1,
+                crate::dtype::DType::UInt32,
+            ),
         );
     }
 
-    for group in common_field_names(first.dpg_arrays(), shards.iter().map(|shard| shard.dpg_arrays())) {
+    for group in common_field_names(
+        first.dpg_arrays(),
+        shards.iter().map(|shard| shard.dpg_arrays()),
+    ) {
         let merged_group = first.dpg_arrays()[&group]
             .iter()
             .map(|(name, arr)| (name.clone(), arr.clone_owned()))

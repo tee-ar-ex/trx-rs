@@ -117,7 +117,11 @@ pub fn read_tt(path: &Path) -> Result<Tractogram> {
             tractogram.insert_dpg(
                 name.clone(),
                 "color",
-                DataArray::owned_bytes(vec_to_bytes(vec![packed_color_to_rgb(packed)]), 3, DType::UInt8),
+                DataArray::owned_bytes(
+                    vec_to_bytes(vec![packed_color_to_rgb(packed)]),
+                    3,
+                    DType::UInt8,
+                ),
             );
         }
     }

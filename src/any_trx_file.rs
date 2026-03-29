@@ -121,17 +121,41 @@ impl AnyTrxFile {
 
     pub fn dpv_entries(&self) -> Vec<(String, DataArrayInfo)> {
         self.with_typed(
-            |trx| trx.iter_dpv().map(|(name, info)| (name.to_string(), info)).collect(),
-            |trx| trx.iter_dpv().map(|(name, info)| (name.to_string(), info)).collect(),
-            |trx| trx.iter_dpv().map(|(name, info)| (name.to_string(), info)).collect(),
+            |trx| {
+                trx.iter_dpv()
+                    .map(|(name, info)| (name.to_string(), info))
+                    .collect()
+            },
+            |trx| {
+                trx.iter_dpv()
+                    .map(|(name, info)| (name.to_string(), info))
+                    .collect()
+            },
+            |trx| {
+                trx.iter_dpv()
+                    .map(|(name, info)| (name.to_string(), info))
+                    .collect()
+            },
         )
     }
 
     pub fn dps_entries(&self) -> Vec<(String, DataArrayInfo)> {
         self.with_typed(
-            |trx| trx.iter_dps().map(|(name, info)| (name.to_string(), info)).collect(),
-            |trx| trx.iter_dps().map(|(name, info)| (name.to_string(), info)).collect(),
-            |trx| trx.iter_dps().map(|(name, info)| (name.to_string(), info)).collect(),
+            |trx| {
+                trx.iter_dps()
+                    .map(|(name, info)| (name.to_string(), info))
+                    .collect()
+            },
+            |trx| {
+                trx.iter_dps()
+                    .map(|(name, info)| (name.to_string(), info))
+                    .collect()
+            },
+            |trx| {
+                trx.iter_dps()
+                    .map(|(name, info)| (name.to_string(), info))
+                    .collect()
+            },
         )
     }
 

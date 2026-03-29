@@ -28,7 +28,10 @@ pub use formats::{
 };
 pub use header::Header;
 pub use mmap_backing::MmapBacking;
-pub use ops::{build_streamline_aabbs, build_streamline_aabbs_from_slices, query_aabb, query_aabb_cached, StreamlineAabb};
+pub use ops::{
+    build_streamline_aabbs, build_streamline_aabbs_from_slices, query_aabb, query_aabb_cached,
+    StreamlineAabb,
+};
 pub use stream::TrxStream;
 pub use tractogram::Tractogram;
 pub use trx_file::{DataArray, DataArrayInfo, TrxFile};

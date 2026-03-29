@@ -280,11 +280,15 @@ impl<P: TrxScalar> TrxFile<P> {
     }
 
     pub fn iter_dps(&self) -> impl Iterator<Item = (&str, DataArrayInfo)> + '_ {
-        self.dps.iter().map(|(name, arr)| (name.as_str(), arr.info()))
+        self.dps
+            .iter()
+            .map(|(name, arr)| (name.as_str(), arr.info()))
     }
 
     pub fn iter_dpv(&self) -> impl Iterator<Item = (&str, DataArrayInfo)> + '_ {
-        self.dpv.iter().map(|(name, arr)| (name.as_str(), arr.info()))
+        self.dpv
+            .iter()
+            .map(|(name, arr)| (name.as_str(), arr.info()))
     }
 
     pub fn iter_groups(&self) -> impl Iterator<Item = (&str, &[u32])> + '_ {
@@ -422,9 +426,9 @@ impl<P: TrxScalar> TrxFile<P> {
             .dpg
             .get(group)
             .ok_or_else(|| TrxError::Argument(format!("no DPG group named '{group}'")))?;
-        group_map.get(name).ok_or_else(|| {
-            TrxError::Argument(format!("no DPG named '{name}' in group '{group}'"))
-        })
+        group_map
+            .get(name)
+            .ok_or_else(|| TrxError::Argument(format!("no DPG named '{name}' in group '{group}'")))
     }
 }
 
@@ -504,12 +508,36 @@ fn read_scalar_array_as_f32(arr: &DataArray, kind: &str, name: &str) -> Result<V
             .iter()
             .map(|&value| value as f32)
             .collect(),
-        DType::Int8 => arr.cast_slice::<i8>().iter().map(|&value| value as f32).collect(),
-        DType::Int16 => arr.cast_slice::<i16>().iter().map(|&value| value as f32).collect(),
-        DType::Int32 => arr.cast_slice::<i32>().iter().map(|&value| value as f32).collect(),
-        DType::UInt8 => arr.cast_slice::<u8>().iter().map(|&value| value as f32).collect(),
-        DType::UInt16 => arr.cast_slice::<u16>().iter().map(|&value| value as f32).collect(),
-        DType::UInt32 => arr.cast_slice::<u32>().iter().map(|&value| value as f32).collect(),
+        DType::Int8 => arr
+            .cast_slice::<i8>()
+            .iter()
+            .map(|&value| value as f32)
+            .collect(),
+        DType::Int16 => arr
+            .cast_slice::<i16>()
+            .iter()
+            .map(|&value| value as f32)
+            .collect(),
+        DType::Int32 => arr
+            .cast_slice::<i32>()
+            .iter()
+            .map(|&value| value as f32)
+            .collect(),
+        DType::UInt8 => arr
+            .cast_slice::<u8>()
+            .iter()
+            .map(|&value| value as f32)
+            .collect(),
+        DType::UInt16 => arr
+            .cast_slice::<u16>()
+            .iter()
+            .map(|&value| value as f32)
+            .collect(),
+        DType::UInt32 => arr
+            .cast_slice::<u32>()
+            .iter()
+            .map(|&value| value as f32)
+            .collect(),
         other => {
             return Err(TrxError::DType(format!(
                 "{kind} '{name}' uses unsupported scalar dtype {other}"

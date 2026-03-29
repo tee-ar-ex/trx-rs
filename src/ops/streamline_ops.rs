@@ -37,7 +37,9 @@ pub fn intersection_indices<P: TrxScalar>(a: &TrxFile<P>, b: &TrxFile<P>) -> Vec
 
     a.streamlines()
         .enumerate()
-        .filter_map(|(index, streamline)| b_set.contains(&streamline_key(streamline)).then_some(index))
+        .filter_map(|(index, streamline)| {
+            b_set.contains(&streamline_key(streamline)).then_some(index)
+        })
         .collect()
 }
 
@@ -48,7 +50,9 @@ pub fn difference_indices<P: TrxScalar>(a: &TrxFile<P>, b: &TrxFile<P>) -> Vec<u
 
     a.streamlines()
         .enumerate()
-        .filter_map(|(index, streamline)| (!b_set.contains(&streamline_key(streamline))).then_some(index))
+        .filter_map(|(index, streamline)| {
+            (!b_set.contains(&streamline_key(streamline))).then_some(index)
+        })
         .collect()
 }
 

@@ -141,7 +141,12 @@ impl Tractogram {
         self.groups.insert(name.into(), members);
     }
 
-    pub fn insert_dpg(&mut self, group: impl Into<String>, name: impl Into<String>, data: DataArray) {
+    pub fn insert_dpg(
+        &mut self,
+        group: impl Into<String>,
+        name: impl Into<String>,
+        data: DataArray,
+    ) {
         self.dpg
             .entry(group.into())
             .or_default()
