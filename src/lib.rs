@@ -29,8 +29,9 @@ pub use formats::{
 pub use header::Header;
 pub use mmap_backing::MmapBacking;
 pub use ops::{
-    build_streamline_aabbs, build_streamline_aabbs_from_slices, query_aabb, query_aabb_cached,
-    StreamlineAabb,
+    build_streamline_aabbs, build_streamline_aabbs_from_slices, difference, difference_indices,
+    intersection, intersection_indices, merge_trx_shards, query_aabb, query_aabb_cached,
+    subset_streamlines, union, StreamlineAabb,
 };
 pub use stream::TrxStream;
 pub use tractogram::Tractogram;

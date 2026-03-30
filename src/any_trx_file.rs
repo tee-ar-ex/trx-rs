@@ -182,6 +182,37 @@ impl AnyTrxFile {
             |trx| trx.scalar_dps_f32(name),
         )
     }
+
+    pub fn save(&self, path: &Path) -> Result<()> {
+        self.with_typed(
+            |trx| trx.save(path),
+            |trx| trx.save(path),
+            |trx| trx.save(path),
+        )
+    }
+
+    pub fn convert_positions_dtype(&self, dtype: DType) -> Result<Self> {
+        match dtype {
+            DType::Float16 => self.with_typed(
+                |trx| Ok(Self::F16(trx.clone_with_positions_dtype::<f16>())),
+                |trx| Ok(Self::F16(trx.clone_with_positions_dtype::<f16>())),
+                |trx| Ok(Self::F16(trx.clone_with_positions_dtype::<f16>())),
+            ),
+            DType::Float32 => self.with_typed(
+                |trx| Ok(Self::F32(trx.clone_with_positions_dtype::<f32>())),
+                |trx| Ok(Self::F32(trx.clone_with_positions_dtype::<f32>())),
+                |trx| Ok(Self::F32(trx.clone_with_positions_dtype::<f32>())),
+            ),
+            DType::Float64 => self.with_typed(
+                |trx| Ok(Self::F64(trx.clone_with_positions_dtype::<f64>())),
+                |trx| Ok(Self::F64(trx.clone_with_positions_dtype::<f64>())),
+                |trx| Ok(Self::F64(trx.clone_with_positions_dtype::<f64>())),
+            ),
+            other => Err(TrxError::DType(format!(
+                "TRX positions must be float16, float32, or float64, got {other}"
+            ))),
+        }
+    }
 }
 
 impl std::fmt::Debug for AnyTrxFile {
