@@ -5,7 +5,7 @@ use std::path::Path;
 use crate::dtype::{DType, TrxScalar};
 use crate::error::{Result, TrxError};
 use crate::header::Header;
-use crate::mmap_backing::MmapBacking;
+use crate::mmap_backing::{vec_to_bytes, MmapBacking};
 use crate::typed_view::TypedView2D;
 
 /// Named data array with column count and dtype metadata.
@@ -403,6 +403,34 @@ impl<P: TrxScalar> TrxFile<P> {
         &mut self.dpg
     }
 
+    pub(crate) fn clone_with_positions_dtype<Q>(&self) -> TrxFile<Q>
+    where
+        Q: TrxScalar + FromF32,
+    {
+        let positions: Vec<[Q; 3]> = self
+            .positions()
+            .iter()
+            .map(|point| {
+                [
+                    Q::from_f32(point[0].to_f32()),
+                    Q::from_f32(point[1].to_f32()),
+                    Q::from_f32(point[2].to_f32()),
+                ]
+            })
+            .collect();
+
+        TrxFile::from_parts(TrxParts {
+            header: self.header.clone(),
+            positions_backing: MmapBacking::Owned(vec_to_bytes(positions)),
+            offsets_backing: MmapBacking::Owned(vec_to_bytes(self.offsets_vec())),
+            dps: clone_data_map(&self.dps),
+            dpv: clone_data_map(&self.dpv),
+            groups: clone_data_map(&self.groups),
+            dpg: clone_dpg_map(&self.dpg),
+            tempdir: None,
+        })
+    }
+
     fn lookup_dps(&self, name: &str) -> Result<&DataArray> {
         self.dps
             .get(name)
@@ -546,4 +574,38 @@ fn read_scalar_array_as_f32(arr: &DataArray, kind: &str, name: &str) -> Result<V
     };
 
     Ok(values)
+}
+
+fn clone_data_map(map: &HashMap<String, DataArray>) -> HashMap<String, DataArray> {
+    map.iter()
+        .map(|(name, arr)| (name.clone(), arr.clone_owned()))
+        .collect()
+}
+
+fn clone_dpg_map(map: &DataPerGroup) -> DataPerGroup {
+    map.iter()
+        .map(|(group, entries)| (group.clone(), clone_data_map(entries)))
+        .collect()
+}
+
+pub(crate) trait FromF32 {
+    fn from_f32(value: f32) -> Self;
+}
+
+impl FromF32 for half::f16 {
+    fn from_f32(value: f32) -> Self {
+        half::f16::from_f32(value)
+    }
+}
+
+impl FromF32 for f32 {
+    fn from_f32(value: f32) -> Self {
+        value
+    }
+}
+
+impl FromF32 for f64 {
+    fn from_f32(value: f32) -> Self {
+        value as f64
+    }
 }
