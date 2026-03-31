@@ -169,9 +169,9 @@ impl AnyTrxFile {
 
     pub fn dpg_group_entries(&self) -> Vec<(String, Vec<(String, DataArrayInfo)>)> {
         self.with_typed(
-            |trx| collect_dpg_group_entries(trx),
-            |trx| collect_dpg_group_entries(trx),
-            |trx| collect_dpg_group_entries(trx),
+            collect_dpg_group_entries,
+            collect_dpg_group_entries,
+            collect_dpg_group_entries,
         )
     }
 
