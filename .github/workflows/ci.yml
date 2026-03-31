@@ -1,7 +1,7 @@
 name: CI
 
 on:
-  push:
+  pull_request:
 
 permissions:
   contents: read
@@ -41,3 +41,35 @@ jobs:
 
       - name: Run tests
         run: cargo test --workspace
+
+  python-parity:
+    name: Python Parity
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Cache Cargo artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install Python tooling and reference package
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install maturin pytest numpy git+https://github.com/tee-ar-ex/trx-python.git
+
+      - name: Build and install trxrs
+        working-directory: python
+        run: maturin develop
+
+      - name: Run parity tests
+        working-directory: python
+        run: python -m pytest tests/test_parity.py -q
