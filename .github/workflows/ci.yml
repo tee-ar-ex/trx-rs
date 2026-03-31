@@ -68,7 +68,9 @@ jobs:
 
       - name: Build and install trxrs
         working-directory: python
-        run: maturin develop
+        run: |
+          maturin build --release --out dist
+          python -m pip install --force-reinstall --no-deps dist/*.whl
 
       - name: Run parity tests
         working-directory: python
