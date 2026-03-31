@@ -3,6 +3,10 @@ name = "trx-rs"
 version = "0.1.0"
 edition = "2021"
 
+[workspace]
+members = ["python"]
+resolver = "2"
+
 [dependencies]
 memmap2 = "0.9"
 bytemuck = { version = "1", features = ["derive"] }

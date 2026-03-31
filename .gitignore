@@ -1,6 +1,12 @@
 # Build artifacts
 /target
 **/*.rs.bk
+/python/.maturin
+/python/.pytest_cache
+/python/.venv
+/python/trxrs/*.so
+/python/trxrs/*.dylib
+**/__pycache__
 
 # IDE / editor
 .idea/

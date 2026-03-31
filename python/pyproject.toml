@@ -1,0 +1,19 @@
+[build-system]
+requires = ["maturin>=1.7,<2", "numpy>=1.26"]
+build-backend = "maturin"
+
+[project]
+name = "trxrs"
+version = "0.1.0"
+description = "Python bindings for trx-rs with zero-copy NumPy views"
+requires-python = ">=3.11"
+dependencies = ["numpy>=1.26"]
+
+[project.optional-dependencies]
+test = ["pytest>=8"]
+docs = ["sphinx>=8.0", "furo>=2024.8.6"]
+
+[tool.maturin]
+module-name = "trxrs._core"
+python-source = "."
+features = ["pyo3/abi3-py311", "pyo3/extension-module"]

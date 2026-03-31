@@ -312,16 +312,32 @@ impl<P: TrxScalar> TrxFile<P> {
         Ok(self.lookup_dps(name)?.info())
     }
 
+    pub fn dps_array(&self, name: &str) -> Result<&DataArray> {
+        self.lookup_dps(name)
+    }
+
     pub fn dpv_info(&self, name: &str) -> Result<DataArrayInfo> {
         Ok(self.lookup_dpv(name)?.info())
+    }
+
+    pub fn dpv_array(&self, name: &str) -> Result<&DataArray> {
+        self.lookup_dpv(name)
     }
 
     pub fn group_info(&self, name: &str) -> Result<DataArrayInfo> {
         Ok(self.lookup_group(name)?.info())
     }
 
+    pub fn group_array(&self, name: &str) -> Result<&DataArray> {
+        self.lookup_group(name)
+    }
+
     pub fn dpg_info(&self, group: &str, name: &str) -> Result<DataArrayInfo> {
         Ok(self.lookup_dpg(group, name)?.info())
+    }
+
+    pub fn dpg_array(&self, group: &str, name: &str) -> Result<&DataArray> {
+        self.lookup_dpg(group, name)
     }
 
     pub fn scalar_dps_f32(&self, name: &str) -> Result<Vec<f32>> {

@@ -167,6 +167,14 @@ impl AnyTrxFile {
         )
     }
 
+    pub fn dpg_group_entries(&self) -> Vec<(String, Vec<(String, DataArrayInfo)>)> {
+        self.with_typed(
+            |trx| collect_dpg_group_entries(trx),
+            |trx| collect_dpg_group_entries(trx),
+            |trx| collect_dpg_group_entries(trx),
+        )
+    }
+
     pub fn scalar_dpv_f32(&self, name: &str) -> Result<Vec<f32>> {
         self.with_typed(
             |trx| trx.scalar_dpv_f32(name),
@@ -223,6 +231,20 @@ impl std::fmt::Debug for AnyTrxFile {
             AnyTrxFile::F64(t) => t.fmt(f),
         }
     }
+}
+
+fn collect_dpg_group_entries<P: crate::dtype::TrxScalar>(
+    trx: &TrxFile<P>,
+) -> Vec<(String, Vec<(String, DataArrayInfo)>)> {
+    trx.dpg_group_names()
+        .into_iter()
+        .map(|group| {
+            let entries = trx
+                .dpg_entries(group)
+                .expect("group name came from dpg_group_names()");
+            (group.to_string(), entries)
+        })
+        .collect()
 }
 
 /// Detect the positions dtype from a TRX path (directory or zip).
