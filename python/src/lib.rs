@@ -8,7 +8,7 @@ use pyo3::exceptions::{PyFileNotFoundError, PyKeyError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyDict, PyList};
 use serde_json::Value;
-use trx_rs::{AnyTrxFile, DataArray, DType, PositionsRef, TrxError};
+use trx_rs::{AnyTrxFile, DType, DataArray, PositionsRef, TrxError};
 
 #[pyclass(module = "trxrs._core", name = "TrxFile")]
 struct PyTrxFile {
@@ -108,11 +108,7 @@ impl PyTrxFile {
         group_numpy(slf, name)
     }
 
-    fn get_dpg<'py>(
-        slf: Bound<'py, Self>,
-        group: &str,
-        name: &str,
-    ) -> PyResult<Bound<'py, PyAny>> {
+    fn get_dpg<'py>(slf: Bound<'py, Self>, group: &str, name: &str) -> PyResult<Bound<'py, PyAny>> {
         dpg_numpy(slf, group, name)
     }
 
@@ -160,7 +156,10 @@ impl PyTrxFile {
     }
 
     #[getter]
-    fn data_per_streamline<'py>(slf: Bound<'py, Self>, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+    fn data_per_streamline<'py>(
+        slf: Bound<'py, Self>,
+        py: Python<'py>,
+    ) -> PyResult<Bound<'py, PyDict>> {
         let dict = PyDict::new(py);
         let names = slf.borrow().dps_keys();
         for name in names {
@@ -171,7 +170,10 @@ impl PyTrxFile {
     }
 
     #[getter]
-    fn data_per_vertex<'py>(slf: Bound<'py, Self>, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+    fn data_per_vertex<'py>(
+        slf: Bound<'py, Self>,
+        py: Python<'py>,
+    ) -> PyResult<Bound<'py, PyDict>> {
         let dict = PyDict::new(py);
         let names = slf.borrow().dpv_keys();
         for name in names {
@@ -237,8 +239,14 @@ fn header_to_pydict<'py>(
     header: &trx_rs::Header,
     dict: &Bound<'py, PyDict>,
 ) -> PyResult<()> {
-    dict.set_item("VOXEL_TO_RASMM", json_value_to_py(py, &serde_json::to_value(header.voxel_to_rasmm).unwrap())?)?;
-    dict.set_item("DIMENSIONS", json_value_to_py(py, &serde_json::to_value(header.dimensions).unwrap())?)?;
+    dict.set_item(
+        "VOXEL_TO_RASMM",
+        json_value_to_py(py, &serde_json::to_value(header.voxel_to_rasmm).unwrap())?,
+    )?;
+    dict.set_item(
+        "DIMENSIONS",
+        json_value_to_py(py, &serde_json::to_value(header.dimensions).unwrap())?,
+    )?;
     dict.set_item("NB_STREAMLINES", header.nb_streamlines)?;
     dict.set_item("NB_VERTICES", header.nb_vertices)?;
     for (key, value) in &header.extra {
@@ -302,9 +310,15 @@ fn dps_numpy<'py>(slf: Bound<'py, PyTrxFile>, name: &str) -> PyResult<Bound<'py,
     let owner = slf.clone().into_any();
     let borrow = slf.borrow();
     match &borrow.inner {
-        AnyTrxFile::F16(trx) => data_array_to_numpy(owner, trx.dps_array(name).map_err(map_lookup_error)?, false),
-        AnyTrxFile::F32(trx) => data_array_to_numpy(owner, trx.dps_array(name).map_err(map_lookup_error)?, false),
-        AnyTrxFile::F64(trx) => data_array_to_numpy(owner, trx.dps_array(name).map_err(map_lookup_error)?, false),
+        AnyTrxFile::F16(trx) => {
+            data_array_to_numpy(owner, trx.dps_array(name).map_err(map_lookup_error)?, false)
+        }
+        AnyTrxFile::F32(trx) => {
+            data_array_to_numpy(owner, trx.dps_array(name).map_err(map_lookup_error)?, false)
+        }
+        AnyTrxFile::F64(trx) => {
+            data_array_to_numpy(owner, trx.dps_array(name).map_err(map_lookup_error)?, false)
+        }
     }
 }
 
@@ -312,9 +326,15 @@ fn dpv_numpy<'py>(slf: Bound<'py, PyTrxFile>, name: &str) -> PyResult<Bound<'py,
     let owner = slf.clone().into_any();
     let borrow = slf.borrow();
     match &borrow.inner {
-        AnyTrxFile::F16(trx) => data_array_to_numpy(owner, trx.dpv_array(name).map_err(map_lookup_error)?, false),
-        AnyTrxFile::F32(trx) => data_array_to_numpy(owner, trx.dpv_array(name).map_err(map_lookup_error)?, false),
-        AnyTrxFile::F64(trx) => data_array_to_numpy(owner, trx.dpv_array(name).map_err(map_lookup_error)?, false),
+        AnyTrxFile::F16(trx) => {
+            data_array_to_numpy(owner, trx.dpv_array(name).map_err(map_lookup_error)?, false)
+        }
+        AnyTrxFile::F32(trx) => {
+            data_array_to_numpy(owner, trx.dpv_array(name).map_err(map_lookup_error)?, false)
+        }
+        AnyTrxFile::F64(trx) => {
+            data_array_to_numpy(owner, trx.dpv_array(name).map_err(map_lookup_error)?, false)
+        }
     }
 }
 
@@ -322,9 +342,21 @@ fn group_numpy<'py>(slf: Bound<'py, PyTrxFile>, name: &str) -> PyResult<Bound<'p
     let owner = slf.clone().into_any();
     let borrow = slf.borrow();
     match &borrow.inner {
-        AnyTrxFile::F16(trx) => data_array_to_numpy(owner, trx.group_array(name).map_err(map_lookup_error)?, true),
-        AnyTrxFile::F32(trx) => data_array_to_numpy(owner, trx.group_array(name).map_err(map_lookup_error)?, true),
-        AnyTrxFile::F64(trx) => data_array_to_numpy(owner, trx.group_array(name).map_err(map_lookup_error)?, true),
+        AnyTrxFile::F16(trx) => data_array_to_numpy(
+            owner,
+            trx.group_array(name).map_err(map_lookup_error)?,
+            true,
+        ),
+        AnyTrxFile::F32(trx) => data_array_to_numpy(
+            owner,
+            trx.group_array(name).map_err(map_lookup_error)?,
+            true,
+        ),
+        AnyTrxFile::F64(trx) => data_array_to_numpy(
+            owner,
+            trx.group_array(name).map_err(map_lookup_error)?,
+            true,
+        ),
     }
 }
 
@@ -336,15 +368,21 @@ fn dpg_numpy<'py>(
     let owner = slf.clone().into_any();
     let borrow = slf.borrow();
     match &borrow.inner {
-        AnyTrxFile::F16(trx) => {
-            data_array_to_numpy(owner, trx.dpg_array(group, name).map_err(map_lookup_error)?, false)
-        }
-        AnyTrxFile::F32(trx) => {
-            data_array_to_numpy(owner, trx.dpg_array(group, name).map_err(map_lookup_error)?, false)
-        }
-        AnyTrxFile::F64(trx) => {
-            data_array_to_numpy(owner, trx.dpg_array(group, name).map_err(map_lookup_error)?, false)
-        }
+        AnyTrxFile::F16(trx) => data_array_to_numpy(
+            owner,
+            trx.dpg_array(group, name).map_err(map_lookup_error)?,
+            false,
+        ),
+        AnyTrxFile::F32(trx) => data_array_to_numpy(
+            owner,
+            trx.dpg_array(group, name).map_err(map_lookup_error)?,
+            false,
+        ),
+        AnyTrxFile::F64(trx) => data_array_to_numpy(
+            owner,
+            trx.dpg_array(group, name).map_err(map_lookup_error)?,
+            false,
+        ),
     }
 }
 
@@ -380,7 +418,10 @@ fn data_array_f16<'py>(
     }
 }
 
-fn array2_from_rows<'py, T>(owner: Bound<'py, PyAny>, data: &[[T; 3]]) -> PyResult<Bound<'py, PyAny>>
+fn array2_from_rows<'py, T>(
+    owner: Bound<'py, PyAny>,
+    data: &[[T; 3]],
+) -> PyResult<Bound<'py, PyAny>>
 where
     T: Element + bytemuck::Pod,
 {
@@ -391,7 +432,10 @@ where
     freeze_array(array.into_any())
 }
 
-fn array2_from_rows_f16<'py>(owner: Bound<'py, PyAny>, data: &[[f16; 3]]) -> PyResult<Bound<'py, PyAny>> {
+fn array2_from_rows_f16<'py>(
+    owner: Bound<'py, PyAny>,
+    data: &[[f16; 3]],
+) -> PyResult<Bound<'py, PyAny>> {
     let words: &[u16] = cast_slice(data);
     array2_f16_from_words(owner, words, data.len(), 3)
 }
@@ -409,7 +453,10 @@ fn without_sentinel(offsets: &[u32]) -> &[u32] {
     offsets.split_last().map_or(offsets, |(_, rest)| rest)
 }
 
-fn array1_f16_from_words<'py>(owner: Bound<'py, PyAny>, data: &[u16]) -> PyResult<Bound<'py, PyAny>> {
+fn array1_f16_from_words<'py>(
+    owner: Bound<'py, PyAny>,
+    data: &[u16],
+) -> PyResult<Bound<'py, PyAny>> {
     let raw = array1_from_slice(owner, data)?;
     reinterpret_as_f16(raw)
 }
