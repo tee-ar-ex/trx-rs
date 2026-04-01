@@ -41,6 +41,8 @@ enum Command {
         reference: Option<PathBuf>,
         #[arg(long = "positions-dtype", value_enum)]
         positions_dtype: Option<PositionDtype>,
+        #[arg(long = "input-group-name")]
+        input_group_names: Vec<String>,
     },
     /// Rewrite a TRX file with a different positions dtype.
     ManipulateDtype {
@@ -92,6 +94,7 @@ fn run(cli: Cli) -> trx_rs::Result<()> {
             delete_groups,
             reference,
             positions_dtype,
+            input_group_names,
         } => concatenate_trx(
             &inputs,
             &output,
@@ -100,6 +103,7 @@ fn run(cli: Cli) -> trx_rs::Result<()> {
             delete_dps,
             delete_groups,
             positions_dtype.map(PositionDtype::into_dtype),
+            &input_group_names,
         ),
         Command::ManipulateDtype {
             input,
@@ -148,6 +152,7 @@ fn concatenate_trx(
     delete_dps: bool,
     delete_groups: bool,
     positions_dtype: Option<DType>,
+    input_group_names: &[String],
 ) -> trx_rs::Result<()> {
     if detect_format(output)? != Format::Trx {
         return Err(TrxError::Argument(
@@ -168,9 +173,20 @@ fn concatenate_trx(
             delete_dps,
             delete_groups,
             positions_dtype,
+            input_group_names: normalize_cli_group_names(input_group_names),
         },
     )?;
     merged.save(output)
+}
+
+fn normalize_cli_group_names(values: &[String]) -> Vec<Option<String>> {
+    values
+        .iter()
+        .map(|value| {
+            let trimmed = value.trim();
+            (!trimmed.is_empty()).then(|| trimmed.to_string())
+        })
+        .collect()
 }
 
 fn load_concat_input(path: &Path, header: Option<trx_rs::Header>) -> trx_rs::Result<AnyTrxFile> {

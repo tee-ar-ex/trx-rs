@@ -17,6 +17,7 @@ pub struct ConcatenateOptions {
     pub delete_dps: bool,
     pub delete_groups: bool,
     pub positions_dtype: Option<DType>,
+    pub input_group_names: Vec<Option<String>>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -29,6 +30,12 @@ struct ArraySpec {
 struct GroupSpec {
     dtype: DType,
     len: usize,
+}
+
+#[derive(Clone, Debug)]
+struct InputGroupRename {
+    aggregate_name: Option<String>,
+    renamed_groups: Vec<(String, String)>,
 }
 
 /// Concatenate multiple TRX files with Python-like semantics.
@@ -47,10 +54,15 @@ pub fn concatenate_any_trx(
     let target_dtype = options.positions_dtype.unwrap_or_else(|| first.dtype());
     let total_streamlines = inputs.iter().map(|input| input.nb_streamlines()).sum();
     let total_vertices = inputs.iter().map(|input| input.nb_vertices()).sum();
+    let group_renames = normalized_group_names(inputs.len(), &options.input_group_names)?
+        .into_iter()
+        .zip(inputs.iter())
+        .map(|(group_name, input)| effective_group_rename(group_name, group_map(input).keys().cloned()))
+        .collect::<Vec<_>>();
 
     let dps_specs = retained_array_specs(inputs, ArrayKind::Dps, options.delete_dps)?;
     let dpv_specs = retained_array_specs(inputs, ArrayKind::Dpv, options.delete_dpv)?;
-    let group_specs = retained_group_specs(inputs)?;
+    let group_specs = retained_group_specs_with_renames(inputs, &group_renames)?;
 
     match target_dtype {
         DType::Float16 => concatenate_into::<f16>(
@@ -60,6 +72,7 @@ pub fn concatenate_any_trx(
             dps_specs,
             dpv_specs,
             group_specs,
+            &group_renames,
             options,
         )
         .map(AnyTrxFile::F16),
@@ -70,6 +83,7 @@ pub fn concatenate_any_trx(
             dps_specs,
             dpv_specs,
             group_specs,
+            &group_renames,
             options,
         )
         .map(AnyTrxFile::F32),
@@ -80,6 +94,7 @@ pub fn concatenate_any_trx(
             dps_specs,
             dpv_specs,
             group_specs,
+            &group_renames,
             options,
         )
         .map(AnyTrxFile::F64),
@@ -122,6 +137,7 @@ fn concatenate_into<P>(
     dps_specs: HashMap<String, ArraySpec>,
     dpv_specs: HashMap<String, ArraySpec>,
     group_specs: HashMap<String, GroupSpec>,
+    group_renames: &[InputGroupRename],
     options: &ConcatenateOptions,
 ) -> Result<TrxFile<P>>
 where
@@ -153,7 +169,7 @@ where
     copy_retained_arrays(inputs, &dps_specs, &mut dps, ArrayKind::Dps)?;
     copy_retained_arrays(inputs, &dpv_specs, &mut dpv, ArrayKind::Dpv)?;
     if !options.delete_groups {
-        copy_groups(inputs, &group_specs, &mut groups)?;
+        copy_groups(inputs, group_renames, &group_specs, &mut groups)?;
     }
 
     Ok(TrxFile::from_parts(TrxParts {
@@ -269,13 +285,46 @@ fn retained_array_specs(
         .collect())
 }
 
-fn retained_group_specs(inputs: &[&AnyTrxFile]) -> Result<HashMap<String, GroupSpec>> {
+fn retained_group_specs_with_renames(
+    inputs: &[&AnyTrxFile],
+    group_renames: &[InputGroupRename],
+) -> Result<HashMap<String, GroupSpec>> {
     let mut specs: HashMap<String, GroupSpec> = HashMap::new();
     let mut lengths: HashMap<String, usize> = HashMap::new();
 
-    for input in inputs {
+    for (input, rename) in inputs.iter().zip(group_renames.iter()) {
         let groups = group_infos(input);
-        for (name, info) in groups {
+        if groups.is_empty() {
+            if let Some(name) = &rename.aggregate_name {
+                match specs.get(name) {
+                    Some(existing) if existing.dtype != DType::UInt32 => {
+                        return Err(TrxError::Argument(format!(
+                            "group key '{name}' has different dtypes across inputs"
+                        )))
+                    }
+                    Some(_) => {}
+                    None => {
+                        specs.insert(
+                            name.clone(),
+                            GroupSpec {
+                                dtype: DType::UInt32,
+                                len: 0,
+                            },
+                        );
+                    }
+                }
+                *lengths.entry(name.clone()).or_insert(0usize) += input.nb_streamlines();
+            }
+            continue;
+        }
+
+        for (source_name, info) in groups {
+            let name = rename
+                .renamed_groups
+                .iter()
+                .find_map(|(from, to)| (from == &source_name).then_some(to))
+                .cloned()
+                .unwrap_or(source_name);
             match specs.get(&name) {
                 Some(existing) if existing.dtype != info.dtype => {
                     return Err(TrxError::Argument(format!(
@@ -699,19 +748,37 @@ fn copy_retained_arrays_typed<P: TrxScalar>(
 
 fn copy_groups(
     inputs: &[&AnyTrxFile],
+    group_renames: &[InputGroupRename],
     specs: &HashMap<String, GroupSpec>,
     outputs: &mut HashMap<String, DataArray>,
 ) -> Result<()> {
     let mut positions: HashMap<String, usize> = specs.keys().map(|name| (name.clone(), 0)).collect();
     let mut streamline_base = 0u32;
-    for input in inputs {
+    for (input, rename) in inputs.iter().zip(group_renames.iter()) {
         let src_groups = group_map(input);
+        if src_groups.is_empty() {
+            if let Some(name) = &rename.aggregate_name {
+                let cursor = positions
+                    .get_mut(name)
+                    .expect("output positions must exist for every group");
+                let dst = outputs
+                    .get_mut(name)
+                    .expect("output arrays must exist for every group");
+                copy_full_streamline_range(*cursor, input.nb_streamlines(), streamline_base, dst)?;
+                *cursor += input.nb_streamlines();
+            }
+        }
         for (name, arr) in src_groups {
+            let output_name = rename
+                .renamed_groups
+                .iter()
+                .find_map(|(from, to)| (from == name).then_some(to.as_str()))
+                .unwrap_or(name);
             let cursor = positions
-                .get_mut(name)
+                .get_mut(output_name)
                 .expect("output positions must exist for every group");
             let dst = outputs
-                .get_mut(name)
+                .get_mut(output_name)
                 .expect("output arrays must exist for every group");
             let count = arr.nrows();
             copy_group_with_offset(arr, *cursor, streamline_base, dst)?;
@@ -748,6 +815,28 @@ fn copy_groups_typed<P: TrxScalar>(
             .ok_or_else(|| TrxError::Argument("streamline count overflow during concatenate".into()))?;
     }
     Ok(())
+}
+
+fn copy_full_streamline_range(
+    dst_start: usize,
+    streamline_count: usize,
+    streamline_base: u32,
+    dst: &mut DataArray,
+) -> Result<()> {
+    match dst.dtype() {
+        DType::UInt32 => {
+            let values: &mut [u32] = dst.cast_slice_mut()?;
+            for idx in 0..streamline_count {
+                values[dst_start + idx] = streamline_base
+                    .checked_add(idx as u32)
+                    .ok_or_else(|| TrxError::Argument("group index overflow during concatenate".into()))?;
+            }
+            Ok(())
+        }
+        other => Err(TrxError::DType(format!(
+            "generated group arrays must use uint32 dtype, got {other}"
+        ))),
+    }
 }
 
 fn copy_group_with_offset(
@@ -818,6 +907,60 @@ fn group_map(file: &AnyTrxFile) -> &HashMap<String, DataArray> {
         AnyTrxFile::F16(trx) => trx.group_arrays(),
         AnyTrxFile::F32(trx) => trx.group_arrays(),
         AnyTrxFile::F64(trx) => trx.group_arrays(),
+    }
+}
+
+fn normalized_group_names(
+    input_count: usize,
+    group_names: &[Option<String>],
+) -> Result<Vec<Option<String>>> {
+    if group_names.is_empty() {
+        return Ok(vec![None; input_count]);
+    }
+    if group_names.len() != input_count {
+        return Err(TrxError::Argument(format!(
+            "input_group_names length {} must match input count {input_count}",
+            group_names.len()
+        )));
+    }
+    Ok(group_names
+        .iter()
+        .map(|value| {
+            value.as_ref().and_then(|name| {
+                let trimmed = name.trim();
+                (!trimmed.is_empty()).then(|| trimmed.to_string())
+            })
+        })
+        .collect())
+}
+
+fn effective_group_rename<I>(group_name: Option<String>, source_groups: I) -> InputGroupRename
+where
+    I: IntoIterator<Item = String>,
+{
+    let source_groups = source_groups.into_iter().collect::<Vec<_>>();
+    if source_groups.is_empty() {
+        return InputGroupRename {
+            aggregate_name: group_name,
+            renamed_groups: Vec::new(),
+        };
+    }
+
+    let renamed_groups = if let Some(group_name) = group_name {
+        source_groups
+            .into_iter()
+            .map(|existing| {
+                let renamed = format!("{group_name}{existing}");
+                (existing, renamed)
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
+
+    InputGroupRename {
+        aggregate_name: None,
+        renamed_groups,
     }
 }
 
@@ -1070,5 +1213,184 @@ mod tests {
         )
         .unwrap();
         assert!(matches!(merged, AnyTrxFile::F16(_)));
+    }
+
+    #[test]
+    fn concatenate_errors_on_group_name_length_mismatch() {
+        let a = build_trx(
+            vec![[0.0, 0.0, 0.0]],
+            vec![0, 1],
+            HashMap::new(),
+            HashMap::new(),
+            HashMap::new(),
+            HashMap::new(),
+        );
+        let b = build_trx(
+            vec![[1.0, 1.0, 1.0]],
+            vec![0, 1],
+            HashMap::new(),
+            HashMap::new(),
+            HashMap::new(),
+            HashMap::new(),
+        );
+        let any_a = AnyTrxFile::F32(a);
+        let any_b = AnyTrxFile::F32(b);
+        let err = concatenate_any_trx(
+            &[&any_a, &any_b],
+            &ConcatenateOptions {
+                input_group_names: vec![Some("bundle".into())],
+                ..Default::default()
+            },
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("input_group_names length"));
+    }
+
+    #[test]
+    fn concatenate_group_name_creates_aggregate_group_when_input_has_no_groups() {
+        let a = build_trx(
+            vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+            vec![0, 1, 2],
+            HashMap::new(),
+            HashMap::new(),
+            HashMap::new(),
+            HashMap::new(),
+        );
+        let b = build_trx(
+            vec![[2.0, 0.0, 0.0]],
+            vec![0, 1],
+            HashMap::new(),
+            HashMap::new(),
+            HashMap::new(),
+            HashMap::new(),
+        );
+        let any_a = AnyTrxFile::F32(a);
+        let any_b = AnyTrxFile::F32(b);
+        let merged = concatenate_any_trx(
+            &[&any_a, &any_b],
+            &ConcatenateOptions {
+                input_group_names: vec![Some("first".into()), None],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        match merged {
+            AnyTrxFile::F32(trx) => {
+                assert_eq!(trx.group("first").unwrap(), &[0, 1]);
+            }
+            _ => panic!("expected float32 output"),
+        }
+    }
+
+    #[test]
+    fn concatenate_group_name_prefixes_existing_groups_without_aggregate() {
+        let a = build_trx(
+            vec![[0.0, 0.0, 0.0], [1.0, 1.0, 1.0]],
+            vec![0, 1, 2],
+            HashMap::new(),
+            HashMap::new(),
+            HashMap::from([(
+                "bundle".into(),
+                DataArray::owned_bytes(vec_to_bytes(vec![0u32, 1u32]), 1, DType::UInt32),
+            )]),
+            HashMap::new(),
+        );
+        let b = build_trx(
+            vec![[2.0, 2.0, 2.0]],
+            vec![0, 1],
+            HashMap::new(),
+            HashMap::new(),
+            HashMap::new(),
+            HashMap::new(),
+        );
+        let any_a = AnyTrxFile::F32(a);
+        let any_b = AnyTrxFile::F32(b);
+        let merged = concatenate_any_trx(
+            &[&any_a, &any_b],
+            &ConcatenateOptions {
+                input_group_names: vec![Some("Prefix".into()), None],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        match merged {
+            AnyTrxFile::F32(trx) => {
+                assert_eq!(trx.group("Prefixbundle").unwrap(), &[0, 1]);
+                assert!(!trx.group_names().contains(&"Prefix"));
+            }
+            _ => panic!("expected float32 output"),
+        }
+    }
+
+    #[test]
+    fn concatenate_group_name_blank_entry_is_ignored() {
+        let a = build_trx(
+            vec![[0.0, 0.0, 0.0]],
+            vec![0, 1],
+            HashMap::new(),
+            HashMap::new(),
+            HashMap::new(),
+            HashMap::new(),
+        );
+        let b = build_trx(
+            vec![[1.0, 1.0, 1.0]],
+            vec![0, 1],
+            HashMap::new(),
+            HashMap::new(),
+            HashMap::new(),
+            HashMap::new(),
+        );
+        let any_a = AnyTrxFile::F32(a);
+        let any_b = AnyTrxFile::F32(b);
+        let merged = concatenate_any_trx(
+            &[&any_a, &any_b],
+            &ConcatenateOptions {
+                input_group_names: vec![Some("   ".into()), None],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        match merged {
+            AnyTrxFile::F32(trx) => assert!(trx.group_names().is_empty()),
+            _ => panic!("expected float32 output"),
+        }
+    }
+
+    #[test]
+    fn concatenate_overlapping_prefixed_group_names_union_members() {
+        let a = build_trx(
+            vec![[0.0, 0.0, 0.0]],
+            vec![0, 1],
+            HashMap::new(),
+            HashMap::new(),
+            HashMap::from([("One".into(), scalar_u32(0))]),
+            HashMap::new(),
+        );
+        let b = build_trx(
+            vec![[1.0, 1.0, 1.0]],
+            vec![0, 1],
+            HashMap::new(),
+            HashMap::new(),
+            HashMap::from([("One".into(), scalar_u32(0))]),
+            HashMap::new(),
+        );
+        let any_a = AnyTrxFile::F32(a);
+        let any_b = AnyTrxFile::F32(b);
+        let merged = concatenate_any_trx(
+            &[&any_a, &any_b],
+            &ConcatenateOptions {
+                input_group_names: vec![Some("Same".into()), Some("Same".into())],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        match merged {
+            AnyTrxFile::F32(trx) => assert_eq!(trx.group("SameOne").unwrap(), &[0, 1]),
+            _ => panic!("expected float32 output"),
+        }
     }
 }

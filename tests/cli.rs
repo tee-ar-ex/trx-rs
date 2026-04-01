@@ -174,6 +174,62 @@ fn concatenate_delete_dps_allows_missing_dps() {
 }
 
 #[test]
+fn concatenate_input_group_names_apply_in_input_order() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let input_a = tmp.path().join("a.trx");
+    let input_b = tmp.path().join("b.trx");
+    let output = tmp.path().join("merged.trx");
+    create_custom_trx(&input_a, [10, 20, 30], None, true);
+    create_custom_trx(&input_b, [10, 20, 30], None, false);
+
+    Command::cargo_bin("trx")
+        .unwrap()
+        .args([
+            "concatenate",
+            input_a.to_str().unwrap(),
+            input_b.to_str().unwrap(),
+            "--output",
+            output.to_str().unwrap(),
+            "--input-group-name",
+            "Left",
+            "--input-group-name",
+            "Right",
+        ])
+        .assert()
+        .success();
+
+    let loaded = trx_rs::AnyTrxFile::load(&output).unwrap();
+    let groups = loaded.groups_owned();
+    assert!(groups.iter().any(|(name, members)| name == "Leftbundle" && members == &vec![0]));
+    assert!(groups.iter().any(|(name, members)| name == "Right" && members == &vec![1]));
+}
+
+#[test]
+fn concatenate_input_group_names_require_matching_input_count() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let input_a = tmp.path().join("a.trx");
+    let input_b = tmp.path().join("b.trx");
+    let output = tmp.path().join("merged.trx");
+    create_test_trx(&input_a);
+    create_test_trx(&input_b);
+
+    Command::cargo_bin("trx")
+        .unwrap()
+        .args([
+            "concatenate",
+            input_a.to_str().unwrap(),
+            input_b.to_str().unwrap(),
+            "--output",
+            output.to_str().unwrap(),
+            "--input-group-name",
+            "OnlyOne",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("input_group_names length"));
+}
+
+#[test]
 fn concatenate_requires_reference_for_tck() {
     let tmp = tempfile::TempDir::new().unwrap();
     let tck = tmp.path().join("sample.tck");
