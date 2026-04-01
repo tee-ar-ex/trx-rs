@@ -8,11 +8,20 @@ use pyo3::exceptions::{PyFileNotFoundError, PyKeyError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyDict, PyList};
 use serde_json::Value;
-use trx_rs::{AnyTrxFile, DType, DataArray, PositionsRef, TrxError};
+use trx_rs::{
+    convert as rs_convert, header_from_reference, read_tractogram, write_tractogram, AnyTrxFile,
+    ConversionOptions, DType, DataArray, Header, PositionsRef, Tractogram as RsTractogram,
+    TrxError,
+};
 
 #[pyclass(module = "trxrs._core", name = "TrxFile")]
 struct PyTrxFile {
     inner: AnyTrxFile,
+}
+
+#[pyclass(module = "trxrs._core", name = "Tractogram")]
+struct PyTractogram {
+    inner: RsTractogram,
 }
 
 #[pyfunction]
@@ -20,6 +29,40 @@ fn load(path: PathBuf) -> PyResult<PyTrxFile> {
     Ok(PyTrxFile {
         inner: AnyTrxFile::load(&path).map_err(map_trx_error)?,
     })
+}
+
+#[pyfunction]
+#[pyo3(signature = (path, reference = None))]
+fn load_tractogram(path: PathBuf, reference: Option<PathBuf>) -> PyResult<PyTractogram> {
+    Ok(PyTractogram {
+        inner: read_tractogram(
+            &path,
+            &ConversionOptions {
+                header: load_reference_header(reference.as_deref())?,
+                ..Default::default()
+            },
+        )
+        .map_err(map_trx_error)?,
+    })
+}
+
+#[pyfunction(signature = (input, output, reference = None, positions_dtype = "float32"))]
+fn convert(
+    input: PathBuf,
+    output: PathBuf,
+    reference: Option<PathBuf>,
+    positions_dtype: &str,
+) -> PyResult<()> {
+    let dtype = parse_positions_dtype(positions_dtype)?;
+    rs_convert(
+        &input,
+        &output,
+        &ConversionOptions {
+            header: load_reference_header(reference.as_deref())?,
+            trx_positions_dtype: dtype,
+        },
+    )
+    .map_err(map_trx_error)
 }
 
 #[pymethods]
@@ -210,10 +253,149 @@ impl PyTrxFile {
     }
 }
 
+#[pymethods]
+impl PyTractogram {
+    fn __len__(&self) -> usize {
+        self.inner.nb_streamlines()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "Tractogram(nb_streamlines={}, nb_vertices={})",
+            self.inner.nb_streamlines(),
+            self.inner.nb_vertices()
+        )
+    }
+
+    #[getter]
+    fn nb_streamlines(&self) -> usize {
+        self.inner.nb_streamlines()
+    }
+
+    #[getter]
+    fn nb_vertices(&self) -> usize {
+        self.inner.nb_vertices()
+    }
+
+    #[getter]
+    fn header<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        let dict = PyDict::new(py);
+        header_to_pydict(py, self.inner.header(), &dict)?;
+        Ok(dict)
+    }
+
+    fn positions<'py>(slf: Bound<'py, Self>) -> PyResult<Bound<'py, PyAny>> {
+        let owner = slf.clone().into_any();
+        let borrow = slf.borrow();
+        array2_from_rows(owner, borrow.inner.positions())
+    }
+
+    fn offsets<'py>(slf: Bound<'py, Self>) -> PyResult<Bound<'py, PyAny>> {
+        let owner = slf.clone().into_any();
+        let borrow = slf.borrow();
+        array1_from_slice(owner, without_sentinel(borrow.inner.offsets()))
+    }
+
+    fn streamline<'py>(slf: Bound<'py, Self>, index: usize) -> PyResult<Bound<'py, PyAny>> {
+        let owner = slf.clone().into_any();
+        let borrow = slf.borrow();
+        let count = borrow.inner.nb_streamlines();
+        if index >= count {
+            return Err(PyKeyError::new_err(format!(
+                "streamline index {index} out of range for {count} streamlines"
+            )));
+        }
+        array2_from_rows(owner, borrow.inner.streamline(index))
+    }
+
+    fn group_keys(&self) -> Vec<String> {
+        let mut names: Vec<String> = self.inner.group_names().map(ToString::to_string).collect();
+        names.sort();
+        names
+    }
+
+    fn dpg_keys(&self) -> std::collections::HashMap<String, Vec<String>> {
+        let mut groups = std::collections::HashMap::new();
+        for (group, entries) in self.inner.dpg() {
+            let mut names: Vec<String> = entries.keys().cloned().collect();
+            names.sort();
+            groups.insert(group.clone(), names);
+        }
+        groups
+    }
+
+    fn get_group<'py>(slf: Bound<'py, Self>, name: &str) -> PyResult<Bound<'py, PyAny>> {
+        let owner = slf.clone().into_any();
+        let borrow = slf.borrow();
+        let members = borrow
+            .inner
+            .group(name)
+            .ok_or_else(|| PyKeyError::new_err(format!("no group named '{name}'")))?;
+        array1_from_slice(owner, members)
+    }
+
+    fn get_dpg<'py>(slf: Bound<'py, Self>, group: &str, name: &str) -> PyResult<Bound<'py, PyAny>> {
+        let owner = slf.clone().into_any();
+        let borrow = slf.borrow();
+        let entries = borrow
+            .inner
+            .dpg()
+            .get(group)
+            .ok_or_else(|| PyKeyError::new_err(format!("no DPG group named '{group}'")))?;
+        let arr = entries
+            .get(name)
+            .ok_or_else(|| PyKeyError::new_err(format!("no DPG named '{name}' in group '{group}'")))?;
+        data_array_to_numpy(owner, arr, false)
+    }
+
+    #[getter]
+    fn groups<'py>(slf: Bound<'py, Self>, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        let dict = PyDict::new(py);
+        let names = slf.borrow().group_keys();
+        for name in names {
+            let value = tractogram_group_numpy(slf.clone(), &name)?;
+            dict.set_item(name, value)?;
+        }
+        Ok(dict)
+    }
+
+    #[getter]
+    fn data_per_group<'py>(slf: Bound<'py, Self>, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        let dict = PyDict::new(py);
+        let groups = slf.borrow().dpg_keys();
+        for (group, names) in groups {
+            let inner = PyDict::new(py);
+            for name in names {
+                let value = tractogram_dpg_numpy(slf.clone(), &group, &name)?;
+                inner.set_item(name, value)?;
+            }
+            dict.set_item(group, inner)?;
+        }
+        Ok(dict)
+    }
+
+    #[pyo3(signature = (path, positions_dtype = "float32"))]
+    fn save(&self, path: PathBuf, positions_dtype: &str) -> PyResult<()> {
+        let dtype = parse_positions_dtype(positions_dtype)?;
+        write_tractogram(
+            &path,
+            &self.inner,
+            &ConversionOptions {
+                header: None,
+                trx_positions_dtype: dtype,
+            },
+        )
+        .map_err(map_trx_error)
+    }
+}
+
 #[pymodule]
 fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyTrxFile>()?;
+    m.add_class::<PyTractogram>()?;
     m.add_function(wrap_pyfunction!(load, m)?)?;
+    m.add_function(wrap_pyfunction!(load_tractogram, m)?)?;
+    m.add_function(wrap_pyfunction!(convert, m)?)?;
     Ok(())
 }
 
@@ -234,9 +416,31 @@ fn map_lookup_error(err: TrxError) -> PyErr {
     }
 }
 
+fn parse_positions_dtype(value: &str) -> PyResult<DType> {
+    let dtype = match value {
+        "f16" => DType::Float16,
+        "f32" => DType::Float32,
+        "f64" => DType::Float64,
+        other => DType::parse(other).map_err(map_trx_error)?,
+    };
+    if !matches!(dtype, DType::Float16 | DType::Float32 | DType::Float64) {
+        return Err(PyValueError::new_err(format!(
+            "positions_dtype must be one of float16, float32, float64, f16, f32, or f64; got {value}"
+        )));
+    }
+    Ok(dtype)
+}
+
+fn load_reference_header(reference: Option<&std::path::Path>) -> PyResult<Option<Header>> {
+    reference
+        .map(header_from_reference)
+        .transpose()
+        .map_err(map_trx_error)
+}
+
 fn header_to_pydict<'py>(
     py: Python<'py>,
-    header: &trx_rs::Header,
+    header: &Header,
     dict: &Bound<'py, PyDict>,
 ) -> PyResult<()> {
     dict.set_item(
@@ -384,6 +588,37 @@ fn dpg_numpy<'py>(
             false,
         ),
     }
+}
+
+fn tractogram_group_numpy<'py>(
+    slf: Bound<'py, PyTractogram>,
+    name: &str,
+) -> PyResult<Bound<'py, PyAny>> {
+    let owner = slf.clone().into_any();
+    let borrow = slf.borrow();
+    let members = borrow
+        .inner
+        .group(name)
+        .ok_or_else(|| PyKeyError::new_err(format!("no group named '{name}'")))?;
+    array1_from_slice(owner, members)
+}
+
+fn tractogram_dpg_numpy<'py>(
+    slf: Bound<'py, PyTractogram>,
+    group: &str,
+    name: &str,
+) -> PyResult<Bound<'py, PyAny>> {
+    let owner = slf.clone().into_any();
+    let borrow = slf.borrow();
+    let entries = borrow
+        .inner
+        .dpg()
+        .get(group)
+        .ok_or_else(|| PyKeyError::new_err(format!("no DPG group named '{group}'")))?;
+    let arr = entries
+        .get(name)
+        .ok_or_else(|| PyKeyError::new_err(format!("no DPG named '{name}' in group '{group}'")))?;
+    data_array_to_numpy(owner, arr, false)
 }
 
 fn data_array_typed<'py, T>(

@@ -62,8 +62,16 @@ impl DataArray {
         self.backing.as_bytes()
     }
 
+    pub(crate) fn as_bytes_mut(&mut self) -> Result<&mut [u8]> {
+        self.backing.as_bytes_mut()
+    }
+
     pub fn cast_slice<T: Pod>(&self) -> &[T] {
         self.backing.cast_slice()
+    }
+
+    pub(crate) fn cast_slice_mut<T: Pod>(&mut self) -> Result<&mut [T]> {
+        self.backing.cast_slice_mut()
     }
 
     pub fn typed_view<T: Pod>(&self) -> TypedView2D<'_, T> {
@@ -387,6 +395,10 @@ impl<P: TrxScalar> TrxFile<P> {
         }
     }
 
+    pub fn is_file_backed(&self) -> bool {
+        self._tempdir.is_some() && self.positions_backing.is_mapped()
+    }
+
     pub(crate) fn dps_arrays(&self) -> &HashMap<String, DataArray> {
         &self.dps
     }
@@ -401,22 +413,6 @@ impl<P: TrxScalar> TrxFile<P> {
 
     pub(crate) fn dpg_arrays(&self) -> &DataPerGroup {
         &self.dpg
-    }
-
-    pub(crate) fn dps_arrays_mut(&mut self) -> &mut HashMap<String, DataArray> {
-        &mut self.dps
-    }
-
-    pub(crate) fn dpv_arrays_mut(&mut self) -> &mut HashMap<String, DataArray> {
-        &mut self.dpv
-    }
-
-    pub(crate) fn group_arrays_mut(&mut self) -> &mut HashMap<String, DataArray> {
-        &mut self.groups
-    }
-
-    pub(crate) fn dpg_arrays_mut(&mut self) -> &mut DataPerGroup {
-        &mut self.dpg
     }
 
     pub(crate) fn clone_with_positions_dtype<Q>(&self) -> TrxFile<Q>

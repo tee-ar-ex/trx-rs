@@ -13,6 +13,7 @@ pub mod header;
 pub mod io;
 pub mod mmap_backing;
 pub mod ops;
+pub mod reference;
 pub mod stream;
 pub mod tractogram;
 pub mod trx_file;
@@ -31,8 +32,9 @@ pub use mmap_backing::MmapBacking;
 pub use ops::{
     build_streamline_aabbs, build_streamline_aabbs_from_slices, difference, difference_indices,
     intersection, intersection_indices, merge_trx_shards, query_aabb, query_aabb_cached,
-    subset_streamlines, union, StreamlineAabb,
+    subset_streamlines, union, ConcatenateOptions, StreamlineAabb, concatenate_any_trx,
 };
+pub use reference::header_from_reference;
 pub use stream::TrxStream;
 pub use tractogram::Tractogram;
 pub use trx_file::{DataArray, DataArrayInfo, TrxFile};

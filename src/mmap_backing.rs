@@ -49,6 +49,10 @@ impl MmapBacking {
         self.len() == 0
     }
 
+    pub fn is_mapped(&self) -> bool {
+        matches!(self, MmapBacking::ReadOnly(_) | MmapBacking::ReadWrite(_))
+    }
+
     /// Cast the raw bytes to a typed slice.
     ///
     /// Panics if the bytes are not aligned or the length is not a multiple

@@ -11,6 +11,7 @@ resolver = "2"
 memmap2 = "0.9"
 bytemuck = { version = "1", features = ["derive"] }
 half = { version = "2", features = ["bytemuck"] }
+nifti = { version = "0.17", features = ["nalgebra_affine"] }
 zip = { version = "2", default-features = false, features = ["deflate"] }
 flate2 = "1"
 serde = { version = "1", features = ["derive"] }
