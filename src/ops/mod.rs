@@ -3,7 +3,7 @@ pub mod merge;
 pub mod streamline_ops;
 pub mod subset;
 
-pub use merge::merge_trx_shards;
+pub use merge::{concatenate_any_trx, merge_trx_shards, ConcatenateOptions};
 pub use streamline_ops::{
     difference, difference_indices, intersection, intersection_indices, union,
 };

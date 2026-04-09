@@ -26,7 +26,7 @@ use std::time::{Duration, Instant};
 use criterion::{criterion_group, BenchmarkId, Criterion, SamplingMode, Throughput};
 use half::f16;
 
-use trx_rs::{TrxFile, TrxStream};
+use trx_rs::{merge_trx_shards, TrxFile, TrxStream};
 
 // ── RSS memory tracking (matches trx-cpp's get_current_rss_kb) ───────
 
@@ -840,6 +840,30 @@ fn bench_iterate(c: &mut Criterion) {
     group.finish();
 }
 
+/// Benchmark: file-backed concatenate of two homogeneous TRX inputs.
+fn bench_concatenate(c: &mut Criterion) {
+    let counts = streamline_counts();
+
+    let mut group = c.benchmark_group("concatenate_trx");
+    group.sampling_mode(SamplingMode::Flat);
+    group.sample_size(10);
+
+    for &count in &counts {
+        eprintln!("Building on-disk f16 subset with {count} streamlines for concatenate_bench...");
+        let subset = build_prefix_on_disk(count);
+
+        group.throughput(Throughput::Elements((count * 2) as u64));
+        group.bench_with_input(BenchmarkId::new("f16_pair", count), &subset, |b, trx| {
+            b.iter(|| {
+                let merged = merge_trx_shards(&[trx, trx]).unwrap();
+                criterion::black_box((merged.nb_streamlines(), merged.nb_vertices()))
+            });
+        });
+    }
+
+    group.finish();
+}
+
 // ── Criterion groups ────────────────────────────────────────────────
 
 criterion_group! {
@@ -853,7 +877,8 @@ criterion_group! {
         bench_stream_translate,
         bench_query_aabb,
         bench_subset,
-        bench_iterate
+        bench_iterate,
+        bench_concatenate
 }
 
 /// Custom main that writes Google Benchmark-compatible JSON after criterion runs.

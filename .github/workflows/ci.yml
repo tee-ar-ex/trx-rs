@@ -1,7 +1,7 @@
 name: CI
 
 on:
-  push:
+  pull_request:
 
 permissions:
   contents: read
@@ -41,3 +41,45 @@ jobs:
 
       - name: Run tests
         run: cargo test --workspace
+
+  python-parity:
+    name: Python Parity
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Cache Cargo artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Cache test fixtures
+        uses: actions/cache@v4
+        with:
+          path: target/test_data
+          key: ${{ runner.os }}-trx-test-data-${{ env.TRX_TEST_DATA_CACHE_VERSION }}
+
+      - name: Install Python tooling and reference package
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install maturin pytest numpy nibabel dipy vtk fury git+https://github.com/tee-ar-ex/trx-python.git
+
+      - name: Prime shared fixture cache
+        run: cargo test --test converters gs_tck_positions_match_rasmm -- --exact
+
+      - name: Build and install trxrs
+        working-directory: python
+        run: |
+          maturin build --release --out dist
+          python -m pip install --force-reinstall --no-deps dist/*.whl
+
+      - name: Run python tests
+        run: python -m pytest python/tests -q

@@ -2,8 +2,8 @@ use std::path::{Path, PathBuf};
 
 use clap::{Parser, Subcommand, ValueEnum};
 use trx_rs::{
-    convert, detect_format, merge_trx_shards, read_tractogram, AnyTrxFile, ConversionOptions,
-    DType, Format, TrxError,
+    concatenate_any_trx, convert, detect_format, header_from_reference, read_tractogram,
+    AnyTrxFile, ConcatenateOptions, ConversionOptions, DType, Format, TrxError,
 };
 
 #[derive(Parser, Debug)]
@@ -31,8 +31,18 @@ enum Command {
         inputs: Vec<PathBuf>,
         #[arg(short, long)]
         output: PathBuf,
+        #[arg(long = "delete-dpv")]
+        delete_dpv: bool,
+        #[arg(long = "delete-dps")]
+        delete_dps: bool,
+        #[arg(long = "delete-groups")]
+        delete_groups: bool,
+        #[arg(short = 'r', long = "reference")]
+        reference: Option<PathBuf>,
         #[arg(long = "positions-dtype", value_enum)]
         positions_dtype: Option<PositionDtype>,
+        #[arg(long = "input-group-name")]
+        input_group_names: Vec<String>,
     },
     /// Rewrite a TRX file with a different positions dtype.
     ManipulateDtype {
@@ -79,11 +89,21 @@ fn run(cli: Cli) -> trx_rs::Result<()> {
         Command::Concatenate {
             inputs,
             output,
+            delete_dpv,
+            delete_dps,
+            delete_groups,
+            reference,
             positions_dtype,
+            input_group_names,
         } => concatenate_trx(
             &inputs,
             &output,
+            reference.as_deref(),
+            delete_dpv,
+            delete_dps,
+            delete_groups,
             positions_dtype.map(PositionDtype::into_dtype),
+            &input_group_names,
         ),
         Command::ManipulateDtype {
             input,
@@ -124,75 +144,75 @@ fn rewrite_trx_dtype(input: &Path, output: &Path, dtype: DType) -> trx_rs::Resul
     rewritten.save(output)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn concatenate_trx(
     inputs: &[PathBuf],
     output: &Path,
+    reference: Option<&Path>,
+    delete_dpv: bool,
+    delete_dps: bool,
+    delete_groups: bool,
     positions_dtype: Option<DType>,
+    input_group_names: &[String],
 ) -> trx_rs::Result<()> {
-    for input in inputs {
-        if detect_format(input)? != Format::Trx {
-            return Err(TrxError::Argument(format!(
-                "concatenate currently only supports TRX inputs: {}",
-                input.display()
-            )));
-        }
-    }
     if detect_format(output)? != Format::Trx {
         return Err(TrxError::Argument(
             "concatenate output must be a TRX path".into(),
         ));
     }
 
+    let header = reference.map(header_from_reference).transpose()?;
     let loaded: Vec<AnyTrxFile> = inputs
         .iter()
-        .map(|path| AnyTrxFile::load(path))
+        .map(|path| load_concat_input(path, header.clone()))
         .collect::<trx_rs::Result<_>>()?;
-    let target_dtype = positions_dtype.unwrap_or_else(|| loaded[0].dtype());
-    let normalized: Vec<AnyTrxFile> = loaded
+    let refs: Vec<&AnyTrxFile> = loaded.iter().collect();
+    let merged = concatenate_any_trx(
+        &refs,
+        &ConcatenateOptions {
+            delete_dpv,
+            delete_dps,
+            delete_groups,
+            positions_dtype,
+            input_group_names: normalize_cli_group_names(input_group_names),
+        },
+    )?;
+    merged.save(output)
+}
+
+fn normalize_cli_group_names(values: &[String]) -> Vec<Option<String>> {
+    values
         .iter()
-        .map(|file| file.convert_positions_dtype(target_dtype))
-        .collect::<trx_rs::Result<_>>()?;
-
-    match target_dtype {
-        DType::Float16 => merge_normalized(&normalized, output, expect_f16),
-        DType::Float32 => merge_normalized(&normalized, output, expect_f32),
-        DType::Float64 => merge_normalized(&normalized, output, expect_f64),
-        other => Err(TrxError::DType(format!(
-            "unsupported positions dtype {other}"
-        ))),
-    }
+        .map(|value| {
+            let trimmed = value.trim();
+            (!trimmed.is_empty()).then(|| trimmed.to_string())
+        })
+        .collect()
 }
 
-fn merge_normalized<P: trx_rs::TrxScalar>(
-    files: &[AnyTrxFile],
-    output: &Path,
-    expect: fn(&AnyTrxFile) -> trx_rs::Result<&trx_rs::TrxFile<P>>,
-) -> trx_rs::Result<()> {
-    let refs = files
-        .iter()
-        .map(expect)
-        .collect::<trx_rs::Result<Vec<_>>>()?;
-    merge_trx_shards(&refs)?.save(output)
-}
-
-fn expect_f16(file: &AnyTrxFile) -> trx_rs::Result<&trx_rs::TrxFile<half::f16>> {
-    match file {
-        AnyTrxFile::F16(trx) => Ok(trx),
-        _ => Err(TrxError::DType("expected float16 TRX".into())),
-    }
-}
-
-fn expect_f32(file: &AnyTrxFile) -> trx_rs::Result<&trx_rs::TrxFile<f32>> {
-    match file {
-        AnyTrxFile::F32(trx) => Ok(trx),
-        _ => Err(TrxError::DType("expected float32 TRX".into())),
-    }
-}
-
-fn expect_f64(file: &AnyTrxFile) -> trx_rs::Result<&trx_rs::TrxFile<f64>> {
-    match file {
-        AnyTrxFile::F64(trx) => Ok(trx),
-        _ => Err(TrxError::DType("expected float64 TRX".into())),
+fn load_concat_input(path: &Path, header: Option<trx_rs::Header>) -> trx_rs::Result<AnyTrxFile> {
+    match detect_format(path)? {
+        Format::Trx => AnyTrxFile::load(path),
+        Format::Tck | Format::Vtk => {
+            if header.is_none() {
+                return Err(TrxError::Argument(format!(
+                    "--reference is required for {}",
+                    path.display()
+                )));
+            }
+            let tractogram = read_tractogram(
+                path,
+                &ConversionOptions {
+                    header,
+                    ..Default::default()
+                },
+            )?;
+            tractogram.to_trx(DType::Float32)
+        }
+        Format::TinyTrack => {
+            let tractogram = read_tractogram(path, &ConversionOptions::default())?;
+            tractogram.to_trx(DType::Float32)
+        }
     }
 }
 
