@@ -52,10 +52,30 @@ fn header_from_nifti(path: &Path) -> Result<Header> {
 
     Ok(Header {
         voxel_to_rasmm: [
-            [affine[(0, 0)], affine[(0, 1)], affine[(0, 2)], affine[(0, 3)]],
-            [affine[(1, 0)], affine[(1, 1)], affine[(1, 2)], affine[(1, 3)]],
-            [affine[(2, 0)], affine[(2, 1)], affine[(2, 2)], affine[(2, 3)]],
-            [affine[(3, 0)], affine[(3, 1)], affine[(3, 2)], affine[(3, 3)]],
+            [
+                affine[(0, 0)],
+                affine[(0, 1)],
+                affine[(0, 2)],
+                affine[(0, 3)],
+            ],
+            [
+                affine[(1, 0)],
+                affine[(1, 1)],
+                affine[(1, 2)],
+                affine[(1, 3)],
+            ],
+            [
+                affine[(2, 0)],
+                affine[(2, 1)],
+                affine[(2, 2)],
+                affine[(2, 3)],
+            ],
+            [
+                affine[(3, 0)],
+                affine[(3, 1)],
+                affine[(3, 2)],
+                affine[(3, 3)],
+            ],
         ],
         dimensions: [
             u64::from(header.dim[1]),

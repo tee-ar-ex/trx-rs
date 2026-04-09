@@ -25,17 +25,29 @@ fn create_custom_trx(
         "NB_STREAMLINES": 1,
         "NB_VERTICES": 2
     });
-    fs::write(path.join("header.json"), serde_json::to_vec(&header).unwrap()).unwrap();
+    fs::write(
+        path.join("header.json"),
+        serde_json::to_vec(&header).unwrap(),
+    )
+    .unwrap();
     fs::write(
         path.join("positions.3.float32"),
         bytemuck::cast_slice(&[[1.0f32, 2.0, 3.0], [4.0, 5.0, 6.0]]),
     )
     .unwrap();
-    fs::write(path.join("offsets.uint32"), bytemuck::cast_slice(&[0u32, 2u32])).unwrap();
+    fs::write(
+        path.join("offsets.uint32"),
+        bytemuck::cast_slice(&[0u32, 2u32]),
+    )
+    .unwrap();
     if let Some(name) = dps_name {
         fs::create_dir_all(path.join("dps")).unwrap();
         let file_name = format!("{name}.float32");
-        fs::write(path.join("dps").join(file_name), bytemuck::cast_slice(&[1.5f32])).unwrap();
+        fs::write(
+            path.join("dps").join(file_name),
+            bytemuck::cast_slice(&[1.5f32]),
+        )
+        .unwrap();
     }
     if include_groups {
         fs::create_dir_all(path.join("groups")).unwrap();
@@ -200,8 +212,12 @@ fn concatenate_input_group_names_apply_in_input_order() {
 
     let loaded = trx_rs::AnyTrxFile::load(&output).unwrap();
     let groups = loaded.groups_owned();
-    assert!(groups.iter().any(|(name, members)| name == "Leftbundle" && members == &vec![0]));
-    assert!(groups.iter().any(|(name, members)| name == "Right" && members == &vec![1]));
+    assert!(groups
+        .iter()
+        .any(|(name, members)| name == "Leftbundle" && members == &vec![0]));
+    assert!(groups
+        .iter()
+        .any(|(name, members)| name == "Right" && members == &vec![1]));
 }
 
 #[test]

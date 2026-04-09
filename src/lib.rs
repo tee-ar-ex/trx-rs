@@ -30,9 +30,9 @@ pub use formats::{
 pub use header::Header;
 pub use mmap_backing::MmapBacking;
 pub use ops::{
-    build_streamline_aabbs, build_streamline_aabbs_from_slices, difference, difference_indices,
-    intersection, intersection_indices, merge_trx_shards, query_aabb, query_aabb_cached,
-    subset_streamlines, union, ConcatenateOptions, StreamlineAabb, concatenate_any_trx,
+    build_streamline_aabbs, build_streamline_aabbs_from_slices, concatenate_any_trx, difference,
+    difference_indices, intersection, intersection_indices, merge_trx_shards, query_aabb,
+    query_aabb_cached, subset_streamlines, union, ConcatenateOptions, StreamlineAabb,
 };
 pub use reference::header_from_reference;
 pub use stream::TrxStream;

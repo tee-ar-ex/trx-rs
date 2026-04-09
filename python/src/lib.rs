@@ -342,9 +342,9 @@ impl PyTractogram {
             .dpg()
             .get(group)
             .ok_or_else(|| PyKeyError::new_err(format!("no DPG group named '{group}'")))?;
-        let arr = entries
-            .get(name)
-            .ok_or_else(|| PyKeyError::new_err(format!("no DPG named '{name}' in group '{group}'")))?;
+        let arr = entries.get(name).ok_or_else(|| {
+            PyKeyError::new_err(format!("no DPG named '{name}' in group '{group}'"))
+        })?;
         data_array_to_numpy(owner, arr, false)
     }
 

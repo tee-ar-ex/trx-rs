@@ -70,7 +70,7 @@ jobs:
       - name: Install Python tooling and reference package
         run: |
           python -m pip install --upgrade pip
-          python -m pip install maturin pytest numpy nibabel dipy vtk git+https://github.com/tee-ar-ex/trx-python.git
+          python -m pip install maturin pytest numpy nibabel dipy vtk fury-gl git+https://github.com/tee-ar-ex/trx-python.git
 
       - name: Prime shared fixture cache
         run: cargo test --test converters gs_tck_positions_match_rasmm -- --exact

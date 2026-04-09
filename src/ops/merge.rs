@@ -57,7 +57,9 @@ pub fn concatenate_any_trx(
     let group_renames = normalized_group_names(inputs.len(), &options.input_group_names)?
         .into_iter()
         .zip(inputs.iter())
-        .map(|(group_name, input)| effective_group_rename(group_name, group_map(input).keys().cloned()))
+        .map(|(group_name, input)| {
+            effective_group_rename(group_name, group_map(input).keys().cloned())
+        })
         .collect::<Vec<_>>();
 
     let dps_specs = retained_array_specs(inputs, ArrayKind::Dps, options.delete_dps)?;
@@ -154,8 +156,10 @@ where
         &tempdir_path.join(format!("positions.3.{}", P::DTYPE.name())),
         total_vertices * 3 * std::mem::size_of::<P>(),
     )?;
-    let mut offsets_backing =
-        create_mmap_backing(&tempdir_path.join("offsets.uint32"), (total_streamlines + 1) * 4)?;
+    let mut offsets_backing = create_mmap_backing(
+        &tempdir_path.join("offsets.uint32"),
+        (total_streamlines + 1) * 4,
+    )?;
     let mut dps = create_data_map(&tempdir_path.join("dps"), &dps_specs, total_streamlines)?;
     let mut dpv = create_data_map(&tempdir_path.join("dpv"), &dpv_specs, total_vertices)?;
     let mut groups = if options.delete_groups {
@@ -207,8 +211,10 @@ where
         &tempdir_path.join(format!("positions.3.{}", P::DTYPE.name())),
         total_vertices * 3 * std::mem::size_of::<P>(),
     )?;
-    let mut offsets_backing =
-        create_mmap_backing(&tempdir_path.join("offsets.uint32"), (total_streamlines + 1) * 4)?;
+    let mut offsets_backing = create_mmap_backing(
+        &tempdir_path.join("offsets.uint32"),
+        (total_streamlines + 1) * 4,
+    )?;
     let mut dps = create_data_map(&tempdir_path.join("dps"), &dps_specs, total_streamlines)?;
     let mut dpv = create_data_map(&tempdir_path.join("dpv"), &dpv_specs, total_vertices)?;
     let mut groups = if options.delete_groups {
@@ -427,7 +433,9 @@ fn retained_array_specs_typed<P: TrxScalar>(
         .collect())
 }
 
-fn retained_group_specs_typed<P: TrxScalar>(inputs: &[&TrxFile<P>]) -> Result<HashMap<String, GroupSpec>> {
+fn retained_group_specs_typed<P: TrxScalar>(
+    inputs: &[&TrxFile<P>],
+) -> Result<HashMap<String, GroupSpec>> {
     let mut specs: HashMap<String, GroupSpec> = HashMap::new();
     let mut lengths: HashMap<String, usize> = HashMap::new();
 
@@ -572,13 +580,20 @@ fn create_data_map(
             .ok_or_else(|| TrxError::Argument(format!("array '{name}' is too large")))?;
         out.insert(
             name.clone(),
-            DataArray::from_backing(create_mmap_backing(&dir.join(filename), len)?, spec.ncols, spec.dtype),
+            DataArray::from_backing(
+                create_mmap_backing(&dir.join(filename), len)?,
+                spec.ncols,
+                spec.dtype,
+            ),
         );
     }
     Ok(out)
 }
 
-fn create_group_map(dir: &Path, specs: &HashMap<String, GroupSpec>) -> Result<HashMap<String, DataArray>> {
+fn create_group_map(
+    dir: &Path,
+    specs: &HashMap<String, GroupSpec>,
+) -> Result<HashMap<String, DataArray>> {
     let mut out = HashMap::new();
     if specs.is_empty() {
         return Ok(out);
@@ -597,7 +612,11 @@ fn create_group_map(dir: &Path, specs: &HashMap<String, GroupSpec>) -> Result<Ha
             .ok_or_else(|| TrxError::Argument(format!("group '{name}' is too large")))?;
         out.insert(
             name.clone(),
-            DataArray::from_backing(create_mmap_backing(&dir.join(filename), len)?, 1, spec.dtype),
+            DataArray::from_backing(
+                create_mmap_backing(&dir.join(filename), len)?,
+                1,
+                spec.dtype,
+            ),
         );
     }
     Ok(out)
@@ -667,7 +686,10 @@ where
     Ok(())
 }
 
-fn fill_offsets_typed<P: TrxScalar>(inputs: &[&TrxFile<P>], backing: &mut MmapBacking) -> Result<()> {
+fn fill_offsets_typed<P: TrxScalar>(
+    inputs: &[&TrxFile<P>],
+    backing: &mut MmapBacking,
+) -> Result<()> {
     let dst: &mut [u32] = backing.cast_slice_mut()?;
     let mut cursor = 0usize;
     let mut vertex_base = 0u32;
@@ -752,7 +774,8 @@ fn copy_groups(
     specs: &HashMap<String, GroupSpec>,
     outputs: &mut HashMap<String, DataArray>,
 ) -> Result<()> {
-    let mut positions: HashMap<String, usize> = specs.keys().map(|name| (name.clone(), 0)).collect();
+    let mut positions: HashMap<String, usize> =
+        specs.keys().map(|name| (name.clone(), 0)).collect();
     let mut streamline_base = 0u32;
     for (input, rename) in inputs.iter().zip(group_renames.iter()) {
         let src_groups = group_map(input);
@@ -786,7 +809,9 @@ fn copy_groups(
         }
         streamline_base = streamline_base
             .checked_add(input.nb_streamlines() as u32)
-            .ok_or_else(|| TrxError::Argument("streamline count overflow during concatenate".into()))?;
+            .ok_or_else(|| {
+                TrxError::Argument("streamline count overflow during concatenate".into())
+            })?;
     }
     Ok(())
 }
@@ -796,7 +821,8 @@ fn copy_groups_typed<P: TrxScalar>(
     specs: &HashMap<String, GroupSpec>,
     outputs: &mut HashMap<String, DataArray>,
 ) -> Result<()> {
-    let mut positions: HashMap<String, usize> = specs.keys().map(|name| (name.clone(), 0)).collect();
+    let mut positions: HashMap<String, usize> =
+        specs.keys().map(|name| (name.clone(), 0)).collect();
     let mut streamline_base = 0u32;
     for input in inputs {
         for (name, arr) in input.group_arrays() {
@@ -812,7 +838,9 @@ fn copy_groups_typed<P: TrxScalar>(
         }
         streamline_base = streamline_base
             .checked_add(input.nb_streamlines() as u32)
-            .ok_or_else(|| TrxError::Argument("streamline count overflow during concatenate".into()))?;
+            .ok_or_else(|| {
+                TrxError::Argument("streamline count overflow during concatenate".into())
+            })?;
     }
     Ok(())
 }
@@ -827,9 +855,10 @@ fn copy_full_streamline_range(
         DType::UInt32 => {
             let values: &mut [u32] = dst.cast_slice_mut()?;
             for idx in 0..streamline_count {
-                values[dst_start + idx] = streamline_base
-                    .checked_add(idx as u32)
-                    .ok_or_else(|| TrxError::Argument("group index overflow during concatenate".into()))?;
+                values[dst_start + idx] =
+                    streamline_base.checked_add(idx as u32).ok_or_else(|| {
+                        TrxError::Argument("group index overflow during concatenate".into())
+                    })?;
             }
             Ok(())
         }
@@ -875,9 +904,8 @@ where
     for (index, &value) in src.iter().enumerate() {
         let current = value.into();
         let shifted = current + addend;
-        let shifted_u64 = u64::try_from(shifted).map_err(|_| {
-            TrxError::Argument("group index underflow during concatenate".into())
-        })?;
+        let shifted_u64 = u64::try_from(shifted)
+            .map_err(|_| TrxError::Argument("group index underflow during concatenate".into()))?;
         dst_values[dst_start + index] = T::try_from(shifted_u64).map_err(|err| {
             TrxError::Argument(format!("group index overflow during concatenate: {err}"))
         })?;
@@ -1025,7 +1053,10 @@ mod tests {
         let mut dpg_a = HashMap::new();
         dpg_a.insert(
             "left".into(),
-            HashMap::from([("color".into(), DataArray::owned_bytes(vec![1, 2, 3], 3, DType::UInt8))]),
+            HashMap::from([(
+                "color".into(),
+                DataArray::owned_bytes(vec![1, 2, 3], 3, DType::UInt8),
+            )]),
         );
 
         let a = build_trx(
@@ -1053,7 +1084,8 @@ mod tests {
 
         let any_a = AnyTrxFile::F32(a);
         let any_b = AnyTrxFile::F32(b);
-        let merged = concatenate_any_trx(&[&any_a, &any_b], &ConcatenateOptions::default()).unwrap();
+        let merged =
+            concatenate_any_trx(&[&any_a, &any_b], &ConcatenateOptions::default()).unwrap();
 
         match merged {
             AnyTrxFile::F32(trx) => {
@@ -1089,7 +1121,8 @@ mod tests {
         );
         let any_a = AnyTrxFile::F32(a);
         let any_b = AnyTrxFile::F32(b);
-        let err = concatenate_any_trx(&[&any_a, &any_b], &ConcatenateOptions::default()).unwrap_err();
+        let err =
+            concatenate_any_trx(&[&any_a, &any_b], &ConcatenateOptions::default()).unwrap_err();
         assert!(err.to_string().contains("dps key 'weight'"));
     }
 
@@ -1153,7 +1186,8 @@ mod tests {
         );
         let any_a = AnyTrxFile::F32(a);
         let any_b = AnyTrxFile::F32(b);
-        let err = concatenate_any_trx(&[&any_a, &any_b], &ConcatenateOptions::default()).unwrap_err();
+        let err =
+            concatenate_any_trx(&[&any_a, &any_b], &ConcatenateOptions::default()).unwrap_err();
         assert!(err.to_string().contains("column counts"));
     }
 
@@ -1180,7 +1214,8 @@ mod tests {
         );
         let any_a = AnyTrxFile::F32(a);
         let any_b = AnyTrxFile::F32(b);
-        let err = concatenate_any_trx(&[&any_a, &any_b], &ConcatenateOptions::default()).unwrap_err();
+        let err =
+            concatenate_any_trx(&[&any_a, &any_b], &ConcatenateOptions::default()).unwrap_err();
         assert!(err.to_string().contains("group key 'bundle'"));
     }
 
