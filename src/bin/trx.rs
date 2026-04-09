@@ -144,6 +144,7 @@ fn rewrite_trx_dtype(input: &Path, output: &Path, dtype: DType) -> trx_rs::Resul
     rewritten.save(output)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn concatenate_trx(
     inputs: &[PathBuf],
     output: &Path,

@@ -132,6 +132,7 @@ pub fn merge_trx_shards<P: TrxScalar>(shards: &[&TrxFile<P>]) -> Result<TrxFile<
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn concatenate_into<P>(
     inputs: &[&AnyTrxFile],
     total_streamlines: usize,
