@@ -6,12 +6,12 @@ use flate2::write::GzEncoder;
 use flate2::Compression;
 use trx_rs::{read_tractogram, AnyTrxFile, ConversionOptions, DType};
 
-fn nibabel_data_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../nibabel/nibabel/tests/data")
+fn fixture_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/trk")
 }
 
 fn fixture(name: &str) -> PathBuf {
-    nibabel_data_dir().join(name)
+    fixture_dir().join(name)
 }
 
 fn assert_positions_close(actual: &[[f32; 3]], expected: &[[f32; 3]]) {

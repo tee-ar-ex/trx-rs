@@ -60,9 +60,9 @@ fn create_custom_trx(
     }
 }
 
-fn nibabel_fixture(name: &str) -> PathBuf {
+fn trk_fixture(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../nibabel/nibabel/tests/data")
+        .join("tests/fixtures/trk")
         .join(name)
 }
 
@@ -310,16 +310,13 @@ fn convert_tck_to_trx_respects_positions_dtype() {
 
 #[test]
 fn convert_trk_to_trx_preserves_metadata() {
+    let input = trk_fixture("complex.trk");
     let tmp = tempfile::TempDir::new().unwrap();
     let output = tmp.path().join("complex.trx");
 
     Command::cargo_bin("trx")
         .unwrap()
-        .args([
-            "convert",
-            nibabel_fixture("complex.trk").to_str().unwrap(),
-            output.to_str().unwrap(),
-        ])
+        .args(["convert", input.to_str().unwrap(), output.to_str().unwrap()])
         .assert()
         .success();
 
@@ -330,16 +327,13 @@ fn convert_trk_to_trx_preserves_metadata() {
 
 #[test]
 fn convert_to_trk_is_rejected() {
+    let input = trk_fixture("simple.trk");
     let tmp = tempfile::TempDir::new().unwrap();
     let output = tmp.path().join("roundtrip.trk");
 
     Command::cargo_bin("trx")
         .unwrap()
-        .args([
-            "convert",
-            nibabel_fixture("simple.trk").to_str().unwrap(),
-            output.to_str().unwrap(),
-        ])
+        .args(["convert", input.to_str().unwrap(), output.to_str().unwrap()])
         .assert()
         .failure()
         .stderr(predicate::str::contains(
