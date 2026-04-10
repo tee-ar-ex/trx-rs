@@ -38,7 +38,7 @@ impl Default for ConversionOptions {
         Self {
             header: None,
             trx_positions_dtype: DType::Float32,
-            vtk_coordinate_mode: VtkCoordinateMode::HeaderOrWarn,
+            vtk_coordinate_mode: VtkCoordinateMode::AssumeRas,
         }
     }
 }
@@ -118,4 +118,17 @@ pub fn convert(input: &Path, output: &Path, options: &ConversionOptions) -> Resu
     }
     let tractogram = read_tractogram(input, options)?;
     write_tractogram(output, &tractogram, options)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ConversionOptions, VtkCoordinateMode};
+
+    #[test]
+    fn conversion_options_default_to_ras_for_vtk_parity() {
+        assert_eq!(
+            ConversionOptions::default().vtk_coordinate_mode,
+            VtkCoordinateMode::AssumeRas
+        );
+    }
 }
