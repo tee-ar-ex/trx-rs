@@ -4,9 +4,10 @@ use crate::error::{Result, TrxError};
 use crate::header::Header;
 use crate::tractogram::Tractogram;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum VtkCoordinateMode {
     HeaderOrWarn,
+    #[default]
     AssumeRas,
     AssumeLps,
 }
@@ -15,12 +16,6 @@ pub enum VtkCoordinateMode {
 pub enum VtkCoordinateSpace {
     Ras,
     Lps,
-}
-
-impl Default for VtkCoordinateMode {
-    fn default() -> Self {
-        Self::AssumeRas
-    }
 }
 
 pub fn read_vtk(

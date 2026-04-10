@@ -290,10 +290,10 @@ fn parse_positive_f32(value: f32, label: &str) -> Result<f32> {
 
 fn parse_affine_f32(endian: Endianness, bytes: &[u8]) -> Result<[[f32; 4]; 4]> {
     let mut affine = [[0.0f32; 4]; 4];
-    for row in 0..4 {
-        for col in 0..4 {
+    for (row, row_values) in affine.iter_mut().enumerate() {
+        for (col, value) in row_values.iter_mut().enumerate() {
             let start = (row * 4 + col) * 4;
-            affine[row][col] = endian.read_f32(&bytes[start..start + 4]);
+            *value = endian.read_f32(&bytes[start..start + 4]);
         }
     }
     if !affine.iter().flatten().all(|value| value.is_finite()) {
@@ -335,8 +335,8 @@ fn affine_to_axcodes(affine: &[[f32; 4]; 4]) -> Result<[char; 3]> {
     for (voxel_axis, slot) in out.iter_mut().enumerate() {
         let mut best_axis = 0usize;
         let mut best_value = 0.0f32;
-        for world_axis in 0..3 {
-            let value = affine[world_axis][voxel_axis].abs();
+        for (world_axis, row) in affine.iter().enumerate().take(3) {
+            let value = row[voxel_axis].abs();
             if value > best_value {
                 best_value = value;
                 best_axis = world_axis;
