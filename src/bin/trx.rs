@@ -2,8 +2,9 @@ use std::path::{Path, PathBuf};
 
 use clap::{Parser, Subcommand, ValueEnum};
 use trx_rs::{
-    concatenate_any_trx, convert, detect_format, header_from_reference, read_tractogram,
-    AnyTrxFile, ConcatenateOptions, ConversionOptions, DType, Format, TrxError,
+    concatenate_any_trx, convert, detect_format, header_from_reference, inspect_vtk_declared_space,
+    read_tractogram, AnyTrxFile, ConcatenateOptions, ConversionOptions, DType, Format, TrxError,
+    VtkCoordinateMode,
 };
 
 #[derive(Parser, Debug)]
@@ -22,6 +23,8 @@ enum Command {
         output: PathBuf,
         #[arg(long = "positions-dtype", value_enum, default_value = "f32")]
         positions_dtype: PositionDtype,
+        #[arg(long = "vtk-space", value_enum, default_value = "ras")]
+        vtk_space: VtkSpaceArg,
     },
     /// Print a concise summary of a tractogram.
     Info { input: PathBuf },
@@ -43,6 +46,8 @@ enum Command {
         positions_dtype: Option<PositionDtype>,
         #[arg(long = "input-group-name")]
         input_group_names: Vec<String>,
+        #[arg(long = "vtk-space", value_enum, default_value = "ras")]
+        vtk_space: VtkSpaceArg,
     },
     /// Rewrite a TRX file with a different positions dtype.
     ManipulateDtype {
@@ -58,6 +63,23 @@ enum PositionDtype {
     F16,
     F32,
     F64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+enum VtkSpaceArg {
+    HeaderOrWarn,
+    Ras,
+    Lps,
+}
+
+impl From<VtkSpaceArg> for VtkCoordinateMode {
+    fn from(value: VtkSpaceArg) -> Self {
+        match value {
+            VtkSpaceArg::HeaderOrWarn => VtkCoordinateMode::HeaderOrWarn,
+            VtkSpaceArg::Ras => VtkCoordinateMode::AssumeRas,
+            VtkSpaceArg::Lps => VtkCoordinateMode::AssumeLps,
+        }
+    }
 }
 
 impl PositionDtype {
@@ -84,7 +106,13 @@ fn run(cli: Cli) -> trx_rs::Result<()> {
             input,
             output,
             positions_dtype,
-        } => run_convert(&input, &output, positions_dtype.into_dtype()),
+            vtk_space,
+        } => run_convert(
+            &input,
+            &output,
+            positions_dtype.into_dtype(),
+            vtk_space.into(),
+        ),
         Command::Info { input } => print_info(&input),
         Command::Concatenate {
             inputs,
@@ -95,6 +123,7 @@ fn run(cli: Cli) -> trx_rs::Result<()> {
             reference,
             positions_dtype,
             input_group_names,
+            vtk_space,
         } => concatenate_trx(
             &inputs,
             &output,
@@ -104,6 +133,7 @@ fn run(cli: Cli) -> trx_rs::Result<()> {
             delete_groups,
             positions_dtype.map(PositionDtype::into_dtype),
             &input_group_names,
+            vtk_space.into(),
         ),
         Command::ManipulateDtype {
             input,
@@ -113,7 +143,12 @@ fn run(cli: Cli) -> trx_rs::Result<()> {
     }
 }
 
-fn run_convert(input: &Path, output: &Path, dtype: DType) -> trx_rs::Result<()> {
+fn run_convert(
+    input: &Path,
+    output: &Path,
+    dtype: DType,
+    vtk_coordinate_mode: VtkCoordinateMode,
+) -> trx_rs::Result<()> {
     let input_format = detect_format(input)?;
     let output_format = detect_format(output)?;
     if input_format == Format::Trx && output_format == Format::Trx {
@@ -126,6 +161,7 @@ fn run_convert(input: &Path, output: &Path, dtype: DType) -> trx_rs::Result<()> 
         &ConversionOptions {
             header: None,
             trx_positions_dtype: dtype,
+            vtk_coordinate_mode,
         },
     )
 }
@@ -154,6 +190,7 @@ fn concatenate_trx(
     delete_groups: bool,
     positions_dtype: Option<DType>,
     input_group_names: &[String],
+    vtk_coordinate_mode: VtkCoordinateMode,
 ) -> trx_rs::Result<()> {
     if detect_format(output)? != Format::Trx {
         return Err(TrxError::Argument(
@@ -164,7 +201,7 @@ fn concatenate_trx(
     let header = reference.map(header_from_reference).transpose()?;
     let loaded: Vec<AnyTrxFile> = inputs
         .iter()
-        .map(|path| load_concat_input(path, header.clone()))
+        .map(|path| load_concat_input(path, header.clone(), vtk_coordinate_mode))
         .collect::<trx_rs::Result<_>>()?;
     let refs: Vec<&AnyTrxFile> = loaded.iter().collect();
     let merged = concatenate_any_trx(
@@ -190,9 +227,17 @@ fn normalize_cli_group_names(values: &[String]) -> Vec<Option<String>> {
         .collect()
 }
 
-fn load_concat_input(path: &Path, header: Option<trx_rs::Header>) -> trx_rs::Result<AnyTrxFile> {
+fn load_concat_input(
+    path: &Path,
+    header: Option<trx_rs::Header>,
+    vtk_coordinate_mode: VtkCoordinateMode,
+) -> trx_rs::Result<AnyTrxFile> {
     match detect_format(path)? {
         Format::Trx => AnyTrxFile::load(path),
+        Format::Trk => {
+            let tractogram = read_tractogram(path, &ConversionOptions::default())?;
+            tractogram.to_trx(DType::Float32)
+        }
         Format::Tck | Format::Vtk => {
             if header.is_none() {
                 return Err(TrxError::Argument(format!(
@@ -204,6 +249,7 @@ fn load_concat_input(path: &Path, header: Option<trx_rs::Header>) -> trx_rs::Res
                 path,
                 &ConversionOptions {
                     header,
+                    vtk_coordinate_mode,
                     ..Default::default()
                 },
             )?;
@@ -239,6 +285,15 @@ fn print_info(path: &Path) -> trx_rs::Result<()> {
             println!("dimensions: {:?}", tractogram.header().dimensions);
             println!("groups: {}", tractogram.groups().len());
             println!("dpg_groups: {}", tractogram.dpg().len());
+            if format == Format::Vtk {
+                let declared = inspect_vtk_declared_space(path)?;
+                let text = match declared {
+                    Some(trx_rs::VtkCoordinateSpace::Ras) => "RAS",
+                    Some(trx_rs::VtkCoordinateSpace::Lps) => "LPS",
+                    None => "missing",
+                };
+                println!("vtk_declared_space: {text}");
+            }
             Ok(())
         }
     }
@@ -251,6 +306,7 @@ fn print_trx_dpg_info<P: trx_rs::TrxScalar>(trx: &trx_rs::TrxFile<P>) {
 fn format_name(format: Format) -> &'static str {
     match format {
         Format::Trx => "trx",
+        Format::Trk => "trk",
         Format::Tck => "tck",
         Format::Vtk => "vtk",
         Format::TinyTrack => "tt",

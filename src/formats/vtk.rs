@@ -4,9 +4,27 @@ use crate::error::{Result, TrxError};
 use crate::header::Header;
 use crate::tractogram::Tractogram;
 
-pub fn read_vtk(path: &Path, header_override: Option<Header>) -> Result<Tractogram> {
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum VtkCoordinateMode {
+    HeaderOrWarn,
+    #[default]
+    AssumeRas,
+    AssumeLps,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VtkCoordinateSpace {
+    Ras,
+    Lps,
+}
+
+pub fn read_vtk(
+    path: &Path,
+    header_override: Option<Header>,
+    coordinate_mode: VtkCoordinateMode,
+) -> Result<Tractogram> {
     let bytes = std::fs::read(path)?;
-    let parsed = parse_vtk_bytes(&bytes)?;
+    let parsed = parse_vtk_bytes(&bytes, coordinate_mode)?;
 
     let mut tractogram = Tractogram::with_header(header_override.unwrap_or(Header {
         voxel_to_rasmm: Header::identity_affine(),
@@ -26,16 +44,12 @@ pub fn read_vtk(path: &Path, header_override: Option<Header>) -> Result<Tractogr
 pub fn write_vtk(path: &Path, tractogram: &Tractogram) -> Result<()> {
     let mut text = String::new();
     text.push_str("# vtk DataFile Version 4.2\n");
-    text.push_str("trx-rs tractogram\n");
+    text.push_str("trx-rs tractogram SPACE=RAS\n");
     text.push_str("ASCII\n");
     text.push_str("DATASET POLYDATA\n");
     text.push_str(&format!("POINTS {} float\n", tractogram.nb_vertices()));
     for point in tractogram.positions() {
-        let vtk_point = ras_to_vtk_world(*point);
-        text.push_str(&format!(
-            "{} {} {}\n",
-            vtk_point[0], vtk_point[1], vtk_point[2]
-        ));
+        text.push_str(&format!("{} {} {}\n", point[0], point[1], point[2]));
     }
 
     let total_line_entries: usize = tractogram
@@ -63,7 +77,23 @@ pub fn write_vtk(path: &Path, tractogram: &Tractogram) -> Result<()> {
     Ok(())
 }
 
-fn parse_vtk_bytes(bytes: &[u8]) -> Result<Vec<Vec<[f32; 3]>>> {
+pub fn inspect_vtk_declared_space(path: &Path) -> Result<Option<VtkCoordinateSpace>> {
+    let bytes = std::fs::read(path)?;
+    inspect_vtk_declared_space_bytes(&bytes)
+}
+
+pub fn vtk_import_warnings(path: &Path, mode: VtkCoordinateMode) -> Result<Vec<String>> {
+    let declared = inspect_vtk_declared_space(path)?;
+    Ok(match (mode, declared) {
+        (VtkCoordinateMode::HeaderOrWarn, None) => vec![
+            "VTK file does not declare `SPACE=RAS` or `SPACE=LPS`; trx-rs assumed LPS and converted to RAS.".to_string(),
+            "If the tractogram looks mirrored, re-import it and force VTK coordinates to RAS.".to_string(),
+        ],
+        _ => Vec::new(),
+    })
+}
+
+fn parse_vtk_bytes(bytes: &[u8], coordinate_mode: VtkCoordinateMode) -> Result<Vec<Vec<[f32; 3]>>> {
     let mut cursor = 0usize;
     let version = read_line(bytes, &mut cursor)?;
     if !version.starts_with("# vtk DataFile Version") {
@@ -94,6 +124,7 @@ fn parse_vtk_bytes(bytes: &[u8]) -> Result<Vec<Vec<[f32; 3]>>> {
     let point_type = header_parts
         .next()
         .ok_or_else(|| TrxError::Format("missing VTK points datatype".into()))?;
+    let vtk_header_text = header_text(bytes, cursor)?;
 
     let is_binary = format.trim().eq_ignore_ascii_case("BINARY");
     let points = if is_binary {
@@ -107,9 +138,15 @@ fn parse_vtk_bytes(bytes: &[u8]) -> Result<Vec<Vec<[f32; 3]>>> {
         )));
     };
 
+    let coordinate_space = resolve_vtk_coordinate_space(vtk_header_text, coordinate_mode)?;
     Ok(points
         .into_iter()
-        .map(|streamline| streamline.into_iter().map(vtk_world_to_ras).collect())
+        .map(|streamline| {
+            streamline
+                .into_iter()
+                .map(|point| vtk_world_to_ras(point, coordinate_space))
+                .collect()
+        })
         .collect())
 }
 
@@ -317,10 +354,88 @@ fn next_token<'a>(tokens: &mut impl Iterator<Item = &'a str>, label: &str) -> Re
         .ok_or_else(|| TrxError::Format(format!("missing VTK token for {label}")))
 }
 
-fn vtk_world_to_ras(point: [f32; 3]) -> [f32; 3] {
-    [-point[0], -point[1], point[2]]
+fn inspect_vtk_declared_space_bytes(bytes: &[u8]) -> Result<Option<VtkCoordinateSpace>> {
+    let mut cursor = 0usize;
+    let version = read_line(bytes, &mut cursor)?;
+    if !version.starts_with("# vtk DataFile Version") {
+        return Err(TrxError::Format("not a legacy VTK file".into()));
+    }
+    let _comment = read_line(bytes, &mut cursor)?;
+    let _format = read_line(bytes, &mut cursor)?;
+    let _dataset = read_line(bytes, &mut cursor)?;
+    let _points = read_line(bytes, &mut cursor)?;
+    Ok(parse_vtk_declared_space(header_text(bytes, cursor)?))
 }
 
-fn ras_to_vtk_world(point: [f32; 3]) -> [f32; 3] {
-    [-point[0], -point[1], point[2]]
+fn parse_vtk_declared_space(comment: &str) -> Option<VtkCoordinateSpace> {
+    let upper = comment.to_ascii_uppercase();
+    if upper.contains("SPACE=RAS") {
+        Some(VtkCoordinateSpace::Ras)
+    } else if upper.contains("SPACE=LPS") {
+        Some(VtkCoordinateSpace::Lps)
+    } else {
+        None
+    }
+}
+
+fn resolve_vtk_coordinate_space(
+    header_text: &str,
+    mode: VtkCoordinateMode,
+) -> Result<VtkCoordinateSpace> {
+    Ok(match mode {
+        VtkCoordinateMode::AssumeRas => VtkCoordinateSpace::Ras,
+        VtkCoordinateMode::AssumeLps => VtkCoordinateSpace::Lps,
+        VtkCoordinateMode::HeaderOrWarn => {
+            parse_vtk_declared_space(header_text).unwrap_or(VtkCoordinateSpace::Lps)
+        }
+    })
+}
+
+fn header_text(bytes: &[u8], end: usize) -> Result<&str> {
+    std::str::from_utf8(&bytes[..end])
+        .map_err(|_| TrxError::Format("VTK header is not valid UTF-8".into()))
+}
+
+fn vtk_world_to_ras(point: [f32; 3], coordinate_space: VtkCoordinateSpace) -> [f32; 3] {
+    match coordinate_space {
+        VtkCoordinateSpace::Ras => point,
+        VtkCoordinateSpace::Lps => [-point[0], -point[1], point[2]],
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        parse_vtk_declared_space, resolve_vtk_coordinate_space, vtk_world_to_ras,
+        VtkCoordinateMode, VtkCoordinateSpace,
+    };
+
+    #[test]
+    fn vtk_header_space_parser_detects_ras_and_lps() {
+        assert_eq!(
+            parse_vtk_declared_space("created in slicer SPACE=RAS"),
+            Some(VtkCoordinateSpace::Ras)
+        );
+        assert_eq!(
+            parse_vtk_declared_space("created in slicer SPACE=LPS"),
+            Some(VtkCoordinateSpace::Lps)
+        );
+        assert_eq!(parse_vtk_declared_space("vtk output"), None);
+    }
+
+    #[test]
+    fn header_or_warn_defaults_to_lps_when_header_is_absent() {
+        assert_eq!(
+            resolve_vtk_coordinate_space("vtk output", VtkCoordinateMode::HeaderOrWarn).unwrap(),
+            VtkCoordinateSpace::Lps
+        );
+    }
+
+    #[test]
+    fn forced_ras_leaves_coordinates_unchanged() {
+        assert_eq!(
+            vtk_world_to_ras([1.0, 2.0, 3.0], VtkCoordinateSpace::Ras),
+            [1.0, 2.0, 3.0]
+        );
+    }
 }

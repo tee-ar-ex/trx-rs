@@ -25,7 +25,8 @@ pub use any_trx_file::{AnyTrxFile, PositionsRef};
 pub use dtype::{DType, TrxScalar};
 pub use error::{Result, TrxError};
 pub use formats::{
-    convert, detect_format, read_tractogram, write_tractogram, ConversionOptions, Format,
+    convert, detect_format, inspect_vtk_declared_space, read_tractogram, vtk_import_warnings,
+    write_tractogram, ConversionOptions, Format, VtkCoordinateMode, VtkCoordinateSpace,
 };
 pub use header::Header;
 pub use mmap_backing::MmapBacking;

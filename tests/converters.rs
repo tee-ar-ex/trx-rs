@@ -2,7 +2,10 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::Once;
 
-use trx_rs::{convert, read_tractogram, AnyTrxFile, ConversionOptions, DType, Header, Tractogram};
+use trx_rs::{
+    convert, inspect_vtk_declared_space, read_tractogram, AnyTrxFile, ConversionOptions, DType,
+    Header, Tractogram, VtkCoordinateMode, VtkCoordinateSpace,
+};
 
 const BASE_URL: &str = "https://github.com/tee-ar-ex/trx-test-data/releases/download/v0.1.0";
 const ARCHIVES: &[&str] = &["gold_standard.zip", "memmap_test_data.zip"];
@@ -123,9 +126,33 @@ fn gs_vtk_positions_match_rasmm() {
     let gs_dir = gold_standard_dir();
     let coords = load_rasmm_coords(&gs_dir.join("gs_rasmm_space.txt"));
 
-    let tractogram =
-        read_tractogram(&gs_dir.join("gs.vtk"), &ConversionOptions::default()).unwrap();
+    let tractogram = read_tractogram(
+        &gs_dir.join("gs.vtk"),
+        &ConversionOptions {
+            vtk_coordinate_mode: VtkCoordinateMode::HeaderOrWarn,
+            ..Default::default()
+        },
+    )
+    .unwrap();
     assert_positions_close(tractogram.positions(), &coords);
+}
+
+#[test]
+fn gs_vtk_positions_can_be_forced_to_ras_without_flip() {
+    let gs_dir = gold_standard_dir();
+    let tractogram = read_tractogram(
+        &gs_dir.join("gs.vtk"),
+        &ConversionOptions {
+            vtk_coordinate_mode: VtkCoordinateMode::AssumeRas,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    let first = tractogram.positions()[0];
+    assert!(first[0] < 0.0);
+    assert!(first[1] < 0.0);
+    assert!(first[2] > 0.0);
 }
 
 #[test]
@@ -190,6 +217,10 @@ fn vtk_ascii_round_trip() {
 
     assert_eq!(loaded.nb_streamlines(), tractogram.nb_streamlines());
     assert_positions_close(loaded.positions(), tractogram.positions());
+    assert_eq!(
+        inspect_vtk_declared_space(&path).unwrap(),
+        Some(VtkCoordinateSpace::Ras)
+    );
 }
 
 fn convert_pathless(

@@ -1,4 +1,5 @@
 pub mod tck;
+pub mod trk;
 pub mod tt;
 pub mod vtk;
 
@@ -9,10 +10,14 @@ use crate::dtype::DType;
 use crate::error::{Result, TrxError};
 use crate::header::Header;
 use crate::tractogram::Tractogram;
+pub use vtk::{
+    inspect_vtk_declared_space, vtk_import_warnings, VtkCoordinateMode, VtkCoordinateSpace,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Format {
     Trx,
+    Trk,
     Tck,
     Vtk,
     TinyTrack,
@@ -24,6 +29,8 @@ pub struct ConversionOptions {
     pub header: Option<Header>,
     /// Positions dtype to use when writing TRX output.
     pub trx_positions_dtype: DType,
+    /// How VTK coordinates should be interpreted when reading.
+    pub vtk_coordinate_mode: VtkCoordinateMode,
 }
 
 impl Default for ConversionOptions {
@@ -31,6 +38,7 @@ impl Default for ConversionOptions {
         Self {
             header: None,
             trx_positions_dtype: DType::Float32,
+            vtk_coordinate_mode: VtkCoordinateMode::AssumeRas,
         }
     }
 }
@@ -45,6 +53,9 @@ pub fn detect_format(path: &Path) -> Result<Format> {
 
     if file_name.ends_with(".trx") || path.is_dir() {
         return Ok(Format::Trx);
+    }
+    if file_name.ends_with(".trk") || file_name.ends_with(".trk.gz") {
+        return Ok(Format::Trk);
     }
     if file_name.ends_with(".tck") || file_name.ends_with(".tck.gz") {
         return Ok(Format::Tck);
@@ -65,8 +76,9 @@ pub fn detect_format(path: &Path) -> Result<Format> {
 pub fn read_tractogram(path: &Path, options: &ConversionOptions) -> Result<Tractogram> {
     match detect_format(path)? {
         Format::Trx => Ok(Tractogram::from(&AnyTrxFile::load(path)?)),
+        Format::Trk => trk::read_trk(path, options.header.clone()),
         Format::Tck => tck::read_tck(path, options.header.clone()),
-        Format::Vtk => vtk::read_vtk(path, options.header.clone()),
+        Format::Vtk => vtk::read_vtk(path, options.header.clone(), options.vtk_coordinate_mode),
         Format::TinyTrack => tt::read_tt(path),
     }
 }
@@ -88,6 +100,10 @@ pub fn write_tractogram(
                 AnyTrxFile::F64(file) => file.save(path),
             }
         }
+        Format::Trk => Err(TrxError::Format(
+            "TrackVis (.trk/.trk.gz) export is intentionally unsupported; convert to TRX instead"
+                .into(),
+        )),
         Format::Tck => tck::write_tck(path, tractogram),
         Format::Vtk => vtk::write_vtk(path, tractogram),
         Format::TinyTrack => Err(TrxError::Format(
@@ -97,6 +113,22 @@ pub fn write_tractogram(
 }
 
 pub fn convert(input: &Path, output: &Path, options: &ConversionOptions) -> Result<()> {
+    if detect_format(input)? == Format::Trk && detect_format(output)? == Format::Trx {
+        return trk::convert_trk_to_trx(input, output, options);
+    }
     let tractogram = read_tractogram(input, options)?;
     write_tractogram(output, &tractogram, options)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ConversionOptions, VtkCoordinateMode};
+
+    #[test]
+    fn conversion_options_default_to_ras_for_vtk_parity() {
+        assert_eq!(
+            ConversionOptions::default().vtk_coordinate_mode,
+            VtkCoordinateMode::AssumeRas
+        );
+    }
 }

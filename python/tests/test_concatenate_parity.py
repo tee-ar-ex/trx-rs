@@ -117,17 +117,7 @@ def test_concatenate_cli_matches_python_for_trx_inputs(
     "source_name",
     [
         "gs.tck",
-        pytest.param(
-            "gs.vtk",
-            marks=pytest.mark.xfail(
-                reason=(
-                    "trx-python reads binary VTK coordinates without applying the "
-                    "LPS-to-RAS flip, so its positions disagree with the authoritative "
-                    "gs_rasmm_space.txt reference. Our Rust reader is correct."
-                ),
-                strict=True,
-            ),
-        ),
+        "gs.vtk",
     ],
 )
 def test_concatenate_cli_matches_python_for_mixed_inputs(

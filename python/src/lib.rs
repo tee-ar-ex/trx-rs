@@ -60,6 +60,7 @@ fn convert(
         &ConversionOptions {
             header: load_reference_header(reference.as_deref())?,
             trx_positions_dtype: dtype,
+            ..Default::default()
         },
     )
     .map_err(map_trx_error)
@@ -383,6 +384,7 @@ impl PyTractogram {
             &ConversionOptions {
                 header: None,
                 trx_positions_dtype: dtype,
+                ..Default::default()
             },
         )
         .map_err(map_trx_error)
