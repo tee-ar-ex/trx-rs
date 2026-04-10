@@ -133,7 +133,9 @@ fn parse_header(bytes: &[u8]) -> Result<(usize, Option<u64>)> {
         }
         let line = std::str::from_utf8(&bytes[line_start..line_end])
             .map_err(|_| TrxError::Format("TCK header is not valid UTF-8".into()))?;
-        let line = line.trim_end_matches('\r');
+        // Some generators leave trailing spaces on header lines, and a UTF-8 BOM can
+        // appear at the beginning of the file. Accept those variants.
+        let line = line.trim_start_matches('\u{feff}').trim();
         if line == "END" {
             break;
         }
@@ -233,5 +235,34 @@ mod tests {
         let header = build_header(13);
         let (_, count) = parse_header(header.as_bytes()).unwrap();
         assert_eq!(count, Some(13));
+    }
+
+    #[test]
+    fn parser_accepts_padded_magic_line() {
+        let mut offset = 0usize;
+        let header = loop {
+            let header = format!(
+                "mrtrix tracks    \ncount: 0000000001\ndatatype: Float32LE\nfile: . {offset}\nEND\n"
+            );
+            let next_offset = header.len();
+            if next_offset == offset {
+                break header;
+            }
+            offset = next_offset;
+        };
+
+        let mut bytes = header.into_bytes();
+        bytes.extend_from_slice(&1.0f32.to_le_bytes());
+        bytes.extend_from_slice(&2.0f32.to_le_bytes());
+        bytes.extend_from_slice(&3.0f32.to_le_bytes());
+        bytes.extend_from_slice(&f32::NAN.to_le_bytes());
+        bytes.extend_from_slice(&f32::NAN.to_le_bytes());
+        bytes.extend_from_slice(&f32::NAN.to_le_bytes());
+        bytes.extend_from_slice(&f32::INFINITY.to_le_bytes());
+        bytes.extend_from_slice(&f32::INFINITY.to_le_bytes());
+        bytes.extend_from_slice(&f32::INFINITY.to_le_bytes());
+
+        let streamlines = parse_tck_bytes(&bytes).unwrap();
+        assert_eq!(streamlines, vec![vec![[1.0, 2.0, 3.0]]]);
     }
 }
