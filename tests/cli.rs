@@ -1,6 +1,7 @@
 use assert_cmd::prelude::*;
 use predicates::prelude::*;
 use std::fs;
+use std::path::PathBuf;
 use std::process::Command;
 
 use trx_rs::{read_tractogram, ConversionOptions, Header, TrxStream};
@@ -57,6 +58,12 @@ fn create_custom_trx(
         )
         .unwrap();
     }
+}
+
+fn nibabel_fixture(name: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../nibabel/nibabel/tests/data")
+        .join(name)
 }
 
 #[test]
@@ -299,4 +306,71 @@ fn convert_tck_to_trx_respects_positions_dtype() {
 
     let roundtrip = read_tractogram(&trx, &ConversionOptions::default()).unwrap();
     assert_eq!(roundtrip.nb_streamlines(), 1);
+}
+
+#[test]
+fn convert_trk_to_trx_preserves_metadata() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let output = tmp.path().join("complex.trx");
+
+    Command::cargo_bin("trx")
+        .unwrap()
+        .args([
+            "convert",
+            nibabel_fixture("complex.trk").to_str().unwrap(),
+            output.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    let loaded = trx_rs::AnyTrxFile::load(&output).unwrap();
+    assert_eq!(loaded.dpv_entries().len(), 2);
+    assert_eq!(loaded.dps_entries().len(), 3);
+}
+
+#[test]
+fn convert_to_trk_is_rejected() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let output = tmp.path().join("roundtrip.trk");
+
+    Command::cargo_bin("trx")
+        .unwrap()
+        .args([
+            "convert",
+            nibabel_fixture("simple.trk").to_str().unwrap(),
+            output.to_str().unwrap(),
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "TrackVis (.trk/.trk.gz) export is intentionally unsupported",
+        ));
+}
+
+#[test]
+fn convert_vtk_to_trx_can_force_ras_coordinates() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let vtk = tmp.path().join("sample.vtk");
+    let output = tmp.path().join("gs_from_vtk.trx");
+    fs::write(
+        &vtk,
+        "# vtk DataFile Version 4.2\nvtk output\nASCII\nDATASET POLYDATA\nPOINTS 2 float\n-1 -2 3\n-4 -5 6\nLINES 1 3\n2 0 1\n",
+    )
+    .unwrap();
+
+    Command::cargo_bin("trx")
+        .unwrap()
+        .args([
+            "convert",
+            vtk.to_str().unwrap(),
+            output.to_str().unwrap(),
+            "--vtk-space",
+            "ras",
+        ])
+        .assert()
+        .success();
+
+    let roundtrip = read_tractogram(&output, &ConversionOptions::default()).unwrap();
+    assert!(roundtrip.positions()[0][0] < 0.0);
+    assert!(roundtrip.positions()[0][1] < 0.0);
 }
