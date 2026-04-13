@@ -157,6 +157,37 @@ impl Tractogram {
         &self.dpg
     }
 
+    pub fn subset_streamlines(&self, indices: &[usize]) -> Result<Self> {
+        let mut tractogram = Tractogram::with_header(self.header.clone());
+        let mut remap = HashMap::with_capacity(indices.len());
+
+        for (new_index, &old_index) in indices.iter().enumerate() {
+            let window = self.offsets.get(old_index..=old_index + 1).ok_or_else(|| {
+                TrxError::Argument(format!("streamline index {old_index} out of bounds"))
+            })?;
+            tractogram.push_streamline(&self.positions[window[0] as usize..window[1] as usize])?;
+            remap.insert(old_index as u32, new_index as u32);
+        }
+
+        for (name, members) in &self.groups {
+            let remapped = members
+                .iter()
+                .filter_map(|member| remap.get(member).copied())
+                .collect::<Vec<_>>();
+            if remapped.is_empty() {
+                continue;
+            }
+            tractogram.insert_group(name.clone(), remapped);
+            if let Some(entries) = self.dpg.get(name) {
+                for (entry_name, array) in entries {
+                    tractogram.insert_dpg(name.clone(), entry_name.clone(), array.clone_owned());
+                }
+            }
+        }
+
+        Ok(tractogram)
+    }
+
     /// Add a streamline to the tractogram.
     pub fn push_streamline(&mut self, points: &[[f32; 3]]) -> Result<()> {
         self.positions.extend_from_slice(points);
