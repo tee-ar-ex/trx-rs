@@ -33,7 +33,10 @@ pub use mmap_backing::MmapBacking;
 pub use ops::{
     build_streamline_aabbs, build_streamline_aabbs_from_slices, concatenate_any_trx, difference,
     difference_indices, intersection, intersection_indices, merge_trx_shards, query_aabb,
-    query_aabb_cached, subset_streamlines, union, ConcatenateOptions, StreamlineAabb,
+    query_aabb_cached, remove_duplicates, remove_duplicates_tractogram,
+    retain_representative_indices, retain_tractogram_representative_indices, subset_streamlines,
+    streamline_union, ConcatenateOptions, DuplicateRemovalMode, DuplicateRemovalParams,
+    StreamlineAabb,
 };
 pub use reference::header_from_reference;
 pub use stream::TrxStream;
