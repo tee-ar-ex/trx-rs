@@ -162,10 +162,9 @@ impl Tractogram {
         let mut remap = HashMap::with_capacity(indices.len());
 
         for (new_index, &old_index) in indices.iter().enumerate() {
-            let window = self
-                .offsets
-                .get(old_index..=old_index + 1)
-                .ok_or_else(|| TrxError::Argument(format!("streamline index {old_index} out of bounds")))?;
+            let window = self.offsets.get(old_index..=old_index + 1).ok_or_else(|| {
+                TrxError::Argument(format!("streamline index {old_index} out of bounds"))
+            })?;
             tractogram.push_streamline(&self.positions[window[0] as usize..window[1] as usize])?;
             remap.insert(old_index as u32, new_index as u32);
         }

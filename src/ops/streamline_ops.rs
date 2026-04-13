@@ -376,7 +376,11 @@ fn euclidean_distance(left: [f32; 3], right: [f32; 3]) -> f32 {
 
 fn point_segment_distance_squared(point: [f32; 3], start: [f32; 3], end: [f32; 3]) -> f32 {
     let ab = [end[0] - start[0], end[1] - start[1], end[2] - start[2]];
-    let ap = [point[0] - start[0], point[1] - start[1], point[2] - start[2]];
+    let ap = [
+        point[0] - start[0],
+        point[1] - start[1],
+        point[2] - start[2],
+    ];
     let ab_len2 = ab[0] * ab[0] + ab[1] * ab[1] + ab[2] * ab[2];
     if ab_len2 <= 1e-12 {
         return squared_distance(point, start);
