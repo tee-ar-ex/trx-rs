@@ -1,3 +1,4 @@
+mod archive_edit;
 pub mod directory;
 pub mod filename;
 pub mod zip;

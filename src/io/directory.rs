@@ -8,6 +8,7 @@ use crate::dtype::{DType, TrxScalar};
 use crate::error::{Result, TrxError};
 use crate::header::Header;
 use crate::io::filename::TrxFilename;
+use crate::mmap_backing::vec_to_bytes;
 use crate::mmap_backing::MmapBacking;
 use crate::trx_file::{DataArray, DataPerGroup, TrxFile, TrxParts};
 
@@ -251,18 +252,135 @@ pub fn save_to_directory<P: TrxScalar>(trx: &TrxFile<P>, dir: &Path) -> Result<(
     Ok(())
 }
 
+pub fn append_dps_to_directory(
+    dir: &Path,
+    dps: &HashMap<String, DataArray>,
+    overwrite: bool,
+) -> Result<()> {
+    let header = Header::from_file(&dir.join("header.json"))?;
+    validate_row_count("DPS", dps, header.nb_streamlines as usize)?;
+    append_arrays_to_directory(&dir.join("dps"), dps, overwrite)
+}
+
+pub fn append_dpv_to_directory(
+    dir: &Path,
+    dpv: &HashMap<String, DataArray>,
+    overwrite: bool,
+) -> Result<()> {
+    let header = Header::from_file(&dir.join("header.json"))?;
+    validate_row_count("DPV", dpv, header.nb_vertices as usize)?;
+    append_arrays_to_directory(&dir.join("dpv"), dpv, overwrite)
+}
+
+pub fn append_groups_to_directory(
+    dir: &Path,
+    groups: &HashMap<String, Vec<u32>>,
+    overwrite: bool,
+) -> Result<()> {
+    let header = Header::from_file(&dir.join("header.json"))?;
+    let groups_dir = dir.join("groups");
+    fs::create_dir_all(&groups_dir)?;
+    for (name, members) in groups {
+        validate_group_members(name, members, header.nb_streamlines as usize)?;
+        let target = groups_dir.join(format!("{name}.uint32"));
+        if !overwrite {
+            if let Some(existing) = find_named_array_file(&groups_dir, name)? {
+                if existing.exists() {
+                    continue;
+                }
+            }
+        } else if let Some(existing) = find_named_array_file(&groups_dir, name)? {
+            if existing != target && existing.exists() {
+                fs::remove_file(existing)?;
+            }
+        }
+        fs::write(target, vec_to_bytes(members.clone()))?;
+    }
+    Ok(())
+}
+
+pub fn append_dpg_to_directory(dir: &Path, dpg: &DataPerGroup, overwrite: bool) -> Result<()> {
+    let groups_dir = dir.join("groups");
+    let dpg_root = dir.join("dpg");
+    for (group, entries) in dpg {
+        if find_named_array_file(&groups_dir, group)?.is_none() {
+            return Err(TrxError::Argument(format!(
+                "cannot add DPG entries for missing group '{group}'"
+            )));
+        }
+        let group_dir = dpg_root.join(group);
+        fs::create_dir_all(&group_dir)?;
+        for (name, arr) in entries {
+            let target = group_dir.join(filename_for_array(name, arr));
+            if !overwrite {
+                if let Some(existing) = find_named_array_file(&group_dir, name)? {
+                    if existing.exists() {
+                        continue;
+                    }
+                }
+            } else if let Some(existing) = find_named_array_file(&group_dir, name)? {
+                if existing != target && existing.exists() {
+                    fs::remove_file(existing)?;
+                }
+            }
+            fs::write(target, arr.as_bytes())?;
+        }
+    }
+    Ok(())
+}
+
+pub fn delete_dps_from_directory(dir: &Path, names: &[&str]) -> Result<()> {
+    delete_named_arrays(&dir.join("dps"), names)
+}
+
+pub fn delete_dpv_from_directory(dir: &Path, names: &[&str]) -> Result<()> {
+    delete_named_arrays(&dir.join("dpv"), names)
+}
+
+pub fn delete_groups_from_directory(dir: &Path, names: &[&str]) -> Result<()> {
+    let groups_dir = dir.join("groups");
+    for name in names {
+        if let Some(path) = find_named_array_file(&groups_dir, name)? {
+            if path.exists() {
+                fs::remove_file(path)?;
+            }
+        }
+        let dpg_group = dir.join("dpg").join(name);
+        if dpg_group.exists() {
+            fs::remove_dir_all(dpg_group)?;
+        }
+    }
+    Ok(())
+}
+
+pub fn delete_dpg_from_directory(dir: &Path, group: &str, names: Option<&[&str]>) -> Result<()> {
+    let group_dir = dir.join("dpg").join(group);
+    match names {
+        None | Some([]) => {
+            if group_dir.exists() {
+                fs::remove_dir_all(group_dir)?;
+            }
+        }
+        Some(names) => {
+            for name in names {
+                if let Some(path) = find_named_array_file(&group_dir, name)? {
+                    if path.exists() {
+                        fs::remove_file(path)?;
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 fn save_data_dir(arrays: &HashMap<String, DataArray>, dir: &Path) -> Result<()> {
     if arrays.is_empty() {
         return Ok(());
     }
     fs::create_dir_all(dir)?;
     for (name, arr) in arrays {
-        let filename = TrxFilename {
-            name: name.clone(),
-            ncols: arr.ncols(),
-            dtype: arr.dtype(),
-        }
-        .to_filename();
+        let filename = filename_for_array(name, arr);
         fs::write(dir.join(&filename), arr.as_bytes())?;
     }
     Ok(())
@@ -277,4 +395,97 @@ fn save_dpg_dir(arrays: &DataPerGroup, dir: &Path) -> Result<()> {
         save_data_dir(entries, &dir.join(group))?;
     }
     Ok(())
+}
+
+fn append_arrays_to_directory(
+    dir: &Path,
+    arrays: &HashMap<String, DataArray>,
+    overwrite: bool,
+) -> Result<()> {
+    fs::create_dir_all(dir)?;
+    for (name, arr) in arrays {
+        let target = dir.join(filename_for_array(name, arr));
+        if !overwrite {
+            if let Some(existing) = find_named_array_file(dir, name)? {
+                if existing.exists() {
+                    continue;
+                }
+            }
+        } else if let Some(existing) = find_named_array_file(dir, name)? {
+            if existing != target && existing.exists() {
+                fs::remove_file(existing)?;
+            }
+        }
+        fs::write(target, arr.as_bytes())?;
+    }
+    Ok(())
+}
+
+fn delete_named_arrays(dir: &Path, names: &[&str]) -> Result<()> {
+    for name in names {
+        if let Some(path) = find_named_array_file(dir, name)? {
+            if path.exists() {
+                fs::remove_file(path)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn find_named_array_file(dir: &Path, name: &str) -> Result<Option<std::path::PathBuf>> {
+    if !dir.exists() {
+        return Ok(None);
+    }
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let file_name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .ok_or_else(|| TrxError::Format(format!("invalid filename: {}", path.display())))?;
+        let parsed = TrxFilename::parse(file_name)?;
+        if parsed.name == name {
+            return Ok(Some(path));
+        }
+    }
+    Ok(None)
+}
+
+fn validate_row_count(
+    kind: &str,
+    arrays: &HashMap<String, DataArray>,
+    expected_rows: usize,
+) -> Result<()> {
+    for (name, arr) in arrays {
+        if arr.nrows() != expected_rows {
+            return Err(TrxError::Format(format!(
+                "{kind} '{name}' has {} rows, expected {expected_rows}",
+                arr.nrows()
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn validate_group_members(name: &str, members: &[u32], nb_streamlines: usize) -> Result<()> {
+    for &member in members {
+        if member as usize >= nb_streamlines {
+            return Err(TrxError::Format(format!(
+                "group '{name}' contains streamline index {member}, but NB_STREAMLINES is {nb_streamlines}"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn filename_for_array(name: &str, arr: &DataArray) -> String {
+    TrxFilename {
+        name: name.to_string(),
+        ncols: arr.ncols(),
+        dtype: arr.dtype(),
+    }
+    .to_filename()
 }
