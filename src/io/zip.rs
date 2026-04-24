@@ -54,49 +54,58 @@ pub fn load_from_zip<P: TrxScalar>(path: &Path) -> Result<TrxFile<P>> {
     crate::io::directory::load_from_directory(&temp_path, Some(tempdir))
 }
 
-/// Save a `TrxFile<P>` to a `.trx` zip archive with deflate compression.
+/// Save a `TrxFile<P>` to a `.trx` zip archive.
+///
+/// All entries are written uncompressed (Stored). DEFLATE rarely pays off on
+/// the float-dominated payload of a TRX file: compression ratios are typically
+/// <15% and write time grows substantially. Callers who want to compress the
+/// `groups/` entries (uint32 streamline-index lists, which do tend to have
+/// runs) can use [`save_to_zip_with`].
 pub fn save_to_zip<P: TrxScalar>(trx: &TrxFile<P>, path: &Path) -> Result<()> {
-    save_to_zip_with(trx, path, zip::CompressionMethod::Deflated)
+    save_to_zip_with(trx, path, zip::CompressionMethod::Stored)
 }
 
-/// Save a `TrxFile<P>` to a `.trx` zip archive with the given compression method.
+/// Save a `TrxFile<P>` to a `.trx` zip archive, applying `groups_compression`
+/// to `groups/` entries only. All other entries (header, positions, offsets,
+/// dps, dpv, dpg) are always Stored.
 pub fn save_to_zip_with<P: TrxScalar>(
     trx: &TrxFile<P>,
     path: &Path,
-    compression: zip::CompressionMethod,
+    groups_compression: zip::CompressionMethod,
 ) -> Result<()> {
     let file = fs::File::create(path)?;
     let mut zip = zip::ZipWriter::new(file);
-    let options = SimpleFileOptions::default()
-        .compression_method(compression)
+    let stored = SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Stored)
+        .large_file(true);
+    let groups_opts = SimpleFileOptions::default()
+        .compression_method(groups_compression)
         .large_file(true);
 
     // Header
     let header_json = trx.header().to_json()?;
-    zip.start_file("header.json", options)?;
+    zip.start_file("header.json", stored)?;
     zip.write_all(header_json.as_bytes())?;
 
     // Positions
     let pos_filename = format!("positions.3.{}", P::DTYPE.name());
-    zip.start_file(&pos_filename, options)?;
+    zip.start_file(&pos_filename, stored)?;
     zip.write_all(trx.positions_bytes())?;
 
     // Offsets default to compact uint32 on disk.
-    zip.start_file("offsets.uint32", options)?;
+    zip.start_file("offsets.uint32", stored)?;
     let offsets_bytes = offsets_as_u32_bytes(trx.offsets());
     zip.write_all(&offsets_bytes)?;
 
-    // DPS
-    write_data_map(&mut zip, "dps", trx.dps_arrays(), options)?;
+    // DPS / DPV — float-heavy, Stored.
+    write_data_map(&mut zip, "dps", trx.dps_arrays(), stored)?;
+    write_data_map(&mut zip, "dpv", trx.dpv_arrays(), stored)?;
 
-    // DPV
-    write_data_map(&mut zip, "dpv", trx.dpv_arrays(), options)?;
+    // Groups — uint32 membership lists; honor caller's compression choice.
+    write_data_map(&mut zip, "groups", trx.group_arrays(), groups_opts)?;
 
-    // Groups
-    write_data_map(&mut zip, "groups", trx.group_arrays(), options)?;
-
-    // DPG
-    write_dpg_map(&mut zip, "dpg", trx.dpg_arrays(), options)?;
+    // DPG — tiny per-group scalars, Stored.
+    write_dpg_map(&mut zip, "dpg", trx.dpg_arrays(), stored)?;
 
     zip.finish()?;
     Ok(())
