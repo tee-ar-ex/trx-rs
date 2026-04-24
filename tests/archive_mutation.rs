@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
+use ::zip::{CompressionMethod, ZipArchive};
 use trx_rs::io::{directory, zip};
 use trx_rs::mmap_backing::vec_to_bytes;
 use trx_rs::{AnyTrxFile, DType, DataArray, Tractogram, TrxFile};
-use ::zip::{CompressionMethod, ZipArchive};
 
 fn base_trx() -> TrxFile<f32> {
     let mut tractogram = Tractogram::new();
