@@ -4,10 +4,9 @@ use std::path::{Path, PathBuf};
 use clap::{Parser, Subcommand, ValueEnum};
 use trx_rs::{
     concatenate_any_trx, convert, detect_format, header_from_reference, inspect_vtk_declared_space,
-    read_tractogram, retain_representative_indices, subset_streamlines,
-    write_tractogram, AnyTrxFile, ConcatenateOptions, ConversionOptions, DType,
-    DuplicateRemovalMode, DuplicateRemovalParams, Format, Header, Tractogram, TrxError, TrxScalar,
-    VtkCoordinateMode,
+    read_tractogram, retain_representative_indices, subset_streamlines, write_tractogram,
+    AnyTrxFile, ConcatenateOptions, ConversionOptions, DType, DuplicateRemovalMode,
+    DuplicateRemovalParams, Format, Header, Tractogram, TrxError, TrxScalar, VtkCoordinateMode,
 };
 
 #[derive(Parser, Debug)]
@@ -65,10 +64,7 @@ enum Command {
         positions_dtype: PositionDtype,
     },
     /// Compare two tractograms and report differences (exit 1 if different).
-    Compare {
-        input1: PathBuf,
-        input2: PathBuf,
-    },
+    Compare { input1: PathBuf, input2: PathBuf },
     /// Update the voxel-to-RAS affine in a TRX file from a reference NIfTI or TRX.
     UpdateAffine {
         input: PathBuf,
@@ -377,11 +373,7 @@ fn print_info(path: &Path, stats: bool) -> trx_rs::Result<()> {
             println!("groups: {}", file.groups_owned().len());
             file.with_typed(print_trx_dpg_info, print_trx_dpg_info, print_trx_dpg_info);
             if stats {
-                file.with_typed(
-                    print_length_stats,
-                    print_length_stats,
-                    print_length_stats,
-                );
+                file.with_typed(print_length_stats, print_length_stats, print_length_stats);
             }
         }
         format => {
@@ -521,7 +513,10 @@ fn compare_tractograms(path1: &Path, path2: &Path) -> trx_rs::Result<bool> {
         & report_set_diff("dpv", &s1.dpv, &s2.dpv)
         & report_set_diff("groups", &s1.groups, &s2.groups);
 
-    println!("result: {}", if identical { "identical" } else { "different" });
+    println!(
+        "result: {}",
+        if identical { "identical" } else { "different" }
+    );
     Ok(identical)
 }
 
@@ -598,9 +593,8 @@ fn compute_valid_indices<P: TrxScalar>(
     remove_identical: bool,
 ) -> trx_rs::Result<(usize, usize, Vec<usize>)> {
     let bounds_indices: Vec<usize> = if remove_invalid {
-        let rasmm_to_voxel = invert_affine(&trx.header().voxel_to_rasmm).ok_or_else(|| {
-            TrxError::Format("voxel_to_rasmm affine is not invertible".into())
-        })?;
+        let rasmm_to_voxel = invert_affine(&trx.header().voxel_to_rasmm)
+            .ok_or_else(|| TrxError::Format("voxel_to_rasmm affine is not invertible".into()))?;
         let dims = trx.header().dimensions;
         (0..trx.nb_streamlines())
             .filter(|&i| streamline_within_bounds(trx.streamline(i), &rasmm_to_voxel, dims))
@@ -767,9 +761,9 @@ fn subset_typed<P: TrxScalar>(
     } else {
         let mut set = HashSet::new();
         for name in &opts.groups {
-            let group_indices = trx.group(name).map_err(|_| {
-                TrxError::Argument(format!("group '{name}' not found in TRX file"))
-            })?;
+            let group_indices = trx
+                .group(name)
+                .map_err(|_| TrxError::Argument(format!("group '{name}' not found in TRX file")))?;
             for &idx in group_indices {
                 set.insert(idx as usize);
             }
