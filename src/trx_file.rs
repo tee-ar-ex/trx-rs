@@ -167,6 +167,12 @@ impl<P: TrxScalar> TrxFile<P> {
         &self.header
     }
 
+    /// Return a new `TrxFile` with the header replaced. All data arrays and
+    /// positions are shared by reference-counted backing (owned copies).
+    pub fn with_updated_header(self, header: Header) -> Self {
+        Self { header, ..self }
+    }
+
     // ── Positions ───────────────────────────────────────────────────
 
     /// Positions as a flat slice of `[P; 3]` arrays.
