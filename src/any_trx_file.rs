@@ -191,6 +191,15 @@ impl AnyTrxFile {
         )
     }
 
+    /// Return a new `AnyTrxFile` with the header replaced.
+    pub fn with_updated_header(self, header: Header) -> Self {
+        match self {
+            AnyTrxFile::F16(f) => AnyTrxFile::F16(f.with_updated_header(header)),
+            AnyTrxFile::F32(f) => AnyTrxFile::F32(f.with_updated_header(header)),
+            AnyTrxFile::F64(f) => AnyTrxFile::F64(f.with_updated_header(header)),
+        }
+    }
+
     pub fn save(&self, path: &Path) -> Result<()> {
         self.with_typed(
             |trx| trx.save(path),
