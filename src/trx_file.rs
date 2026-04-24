@@ -51,11 +51,7 @@ impl DataArray {
 
     pub fn nrows(&self) -> usize {
         let row_bytes = self.ncols * self.dtype.size_of();
-        if row_bytes == 0 {
-            0
-        } else {
-            self.len_bytes() / row_bytes
-        }
+        self.len_bytes().checked_div(row_bytes).unwrap_or(0)
     }
 
     pub fn as_bytes(&self) -> &[u8] {
