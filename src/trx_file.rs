@@ -51,11 +51,7 @@ impl DataArray {
 
     pub fn nrows(&self) -> usize {
         let row_bytes = self.ncols * self.dtype.size_of();
-        if row_bytes == 0 {
-            0
-        } else {
-            self.len_bytes() / row_bytes
-        }
+        self.len_bytes().checked_div(row_bytes).unwrap_or(0)
     }
 
     pub fn as_bytes(&self) -> &[u8] {
@@ -376,14 +372,21 @@ impl<P: TrxScalar> TrxFile<P> {
         crate::io::directory::save_to_directory(self, path)
     }
 
-    /// Save to a `.trx` zip archive (deflate compression).
+    /// Save to a `.trx` zip archive. All entries are Stored (no compression):
+    /// DEFLATE rarely pays off on float-heavy tractography data.
     pub fn save_to_zip(&self, path: &Path) -> Result<()> {
         crate::io::zip::save_to_zip(self, path)
     }
 
-    /// Save to a `.trx` zip archive without compression (stored mode).
+    /// Save to a `.trx` zip archive, applying DEFLATE only to `groups/` entries.
+    /// Everything else is Stored.
+    pub fn save_to_zip_deflate_groups(&self, path: &Path) -> Result<()> {
+        crate::io::zip::save_to_zip_with(self, path, zip::CompressionMethod::Deflated)
+    }
+
+    /// Deprecated alias for [`save_to_zip`] — kept for backward compatibility.
     pub fn save_to_zip_stored(&self, path: &Path) -> Result<()> {
-        crate::io::zip::save_to_zip_with(self, path, zip::CompressionMethod::Stored)
+        crate::io::zip::save_to_zip(self, path)
     }
 
     /// Save — auto-detects format from extension (`.trx` = zip, otherwise directory).

@@ -176,12 +176,10 @@ fn parse_header(bytes: &[u8]) -> Result<(usize, Option<u64>)> {
                         TrxError::Format(format!("invalid TCK streamline count '{value}'"))
                     })?);
                 }
-                "datatype" => {
-                    if value != "Float32LE" {
-                        return Err(TrxError::Format(format!(
-                            "unsupported TCK datatype '{value}', expected Float32LE"
-                        )));
-                    }
+                "datatype" if value != "Float32LE" => {
+                    return Err(TrxError::Format(format!(
+                        "unsupported TCK datatype '{value}', expected Float32LE"
+                    )));
                 }
                 _ => {}
             }
