@@ -424,6 +424,22 @@ impl<P: TrxScalar> TrxFile<P> {
         &self.dpg
     }
 
+    pub(crate) fn dps_arrays_mut(&mut self) -> &mut HashMap<String, DataArray> {
+        &mut self.dps
+    }
+
+    pub(crate) fn dpv_arrays_mut(&mut self) -> &mut HashMap<String, DataArray> {
+        &mut self.dpv
+    }
+
+    pub(crate) fn group_arrays_mut(&mut self) -> &mut HashMap<String, DataArray> {
+        &mut self.groups
+    }
+
+    pub(crate) fn dpg_arrays_mut(&mut self) -> &mut DataPerGroup {
+        &mut self.dpg
+    }
+
     pub(crate) fn clone_with_positions_dtype<Q>(&self) -> TrxFile<Q>
     where
         Q: TrxScalar + FromF32,
