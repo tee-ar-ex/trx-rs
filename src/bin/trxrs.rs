@@ -11,7 +11,7 @@ use trx_rs::{
 };
 
 #[derive(Parser, Debug)]
-#[command(name = "trx")]
+#[command(name = "trxrs")]
 #[command(about = "TRX tractogram tools", version)]
 struct Cli {
     #[command(subcommand)]

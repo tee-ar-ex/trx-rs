@@ -184,43 +184,43 @@ cargo build --release
 
 ## Command-line interface
 
-The repository now ships a `trx` binary under `src/bin/trx.rs`.
+The repository now ships a `trxrs` binary under `src/bin/trxrs.rs`.
 
 Build it locally:
 
 ```bash
 cargo build --release
-./target/release/trx --help
+./target/release/trxrs --help
 ```
 
 Install it into Cargo's bin directory:
 
 ```bash
 cargo install --path .
-trx --help
+trxrs --help
 ```
 
 Available subcommands:
 
-- `trx info <input>`
-- `trx convert <input> <output> [--positions-dtype f16|f32|f64]`
-- `trx concatenate <input-a.trx> <input-b.trx> ... --output <output.trx> [--positions-dtype f16|f32|f64]`
-- `trx manipulate-dtype <input.trx> <output.trx> [--positions-dtype f16|f32|f64]`
+- `trxrs info <input>`
+- `trxrs convert <input> <output> [--positions-dtype f16|f32|f64]`
+- `trxrs concatenate <input-a.trx> <input-b.trx> ... --output <output.trx> [--positions-dtype f16|f32|f64]`
+- `trxrs manipulate-dtype <input.trx> <output.trx> [--positions-dtype f16|f32|f64]`
 
 Examples:
 
 ```bash
 # Inspect a TRX or supported foreign-format tractogram
-trx info bundles.trx
+trxrs info bundles.trx
 
 # Convert gzipped TCK to TRX with float16 positions
-trx convert bundles.tck.gz bundles.trx --positions-dtype f16
+trxrs convert bundles.tck.gz bundles.trx --positions-dtype f16
 
 # Rewrite an existing TRX with float32 positions
-trx manipulate-dtype input.trx output.trx --positions-dtype f32
+trxrs manipulate-dtype input.trx output.trx --positions-dtype f32
 
 # Concatenate TRX files and write float16 output
-trx concatenate shard1.trx shard2.trx --output merged.trx --positions-dtype f16
+trxrs concatenate shard1.trx shard2.trx --output merged.trx --positions-dtype f16
 ```
 
 Notes:

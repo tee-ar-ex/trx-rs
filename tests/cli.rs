@@ -68,7 +68,7 @@ fn trk_fixture(name: &str) -> PathBuf {
 
 #[test]
 fn info_help_prints_subcommand_usage() {
-    Command::cargo_bin("trx")
+    Command::cargo_bin("trxrs")
         .unwrap()
         .args(["info", "--help"])
         .assert()
@@ -78,7 +78,7 @@ fn info_help_prints_subcommand_usage() {
 
 #[test]
 fn convert_help_mentions_positions_dtype() {
-    Command::cargo_bin("trx")
+    Command::cargo_bin("trxrs")
         .unwrap()
         .args(["convert", "--help"])
         .assert()
@@ -93,7 +93,7 @@ fn manipulate_dtype_rewrites_trx_positions_dtype() {
     let output = tmp.path().join("output.trx");
     create_test_trx(&input);
 
-    Command::cargo_bin("trx")
+    Command::cargo_bin("trxrs")
         .unwrap()
         .args([
             "manipulate-dtype",
@@ -119,7 +119,7 @@ fn concatenate_merges_two_trx_inputs() {
     create_test_trx(&input_a);
     create_test_trx(&input_b);
 
-    Command::cargo_bin("trx")
+    Command::cargo_bin("trxrs")
         .unwrap()
         .args([
             "concatenate",
@@ -147,7 +147,7 @@ fn concatenate_uses_first_header_and_drops_dpg() {
     create_custom_trx(&input_a, [10, 20, 30], Some("weights"), true);
     create_custom_trx(&input_b, [99, 99, 99], Some("weights"), false);
 
-    Command::cargo_bin("trx")
+    Command::cargo_bin("trxrs")
         .unwrap()
         .args([
             "concatenate",
@@ -175,7 +175,7 @@ fn concatenate_delete_dps_allows_missing_dps() {
     create_custom_trx(&input_a, [10, 20, 30], Some("weights"), false);
     create_custom_trx(&input_b, [10, 20, 30], None, false);
 
-    Command::cargo_bin("trx")
+    Command::cargo_bin("trxrs")
         .unwrap()
         .args([
             "concatenate",
@@ -201,7 +201,7 @@ fn concatenate_input_group_names_apply_in_input_order() {
     create_custom_trx(&input_a, [10, 20, 30], None, true);
     create_custom_trx(&input_b, [10, 20, 30], None, false);
 
-    Command::cargo_bin("trx")
+    Command::cargo_bin("trxrs")
         .unwrap()
         .args([
             "concatenate",
@@ -236,7 +236,7 @@ fn concatenate_input_group_names_require_matching_input_count() {
     create_test_trx(&input_a);
     create_test_trx(&input_b);
 
-    Command::cargo_bin("trx")
+    Command::cargo_bin("trxrs")
         .unwrap()
         .args([
             "concatenate",
@@ -263,7 +263,7 @@ fn concatenate_requires_reference_for_tck() {
     tractogram.push_streamline(&[[1.0, 2.0, 3.0]]).unwrap();
     trx_rs::write_tractogram(&tck, &tractogram, &ConversionOptions::default()).unwrap();
 
-    Command::cargo_bin("trx")
+    Command::cargo_bin("trxrs")
         .unwrap()
         .args([
             "concatenate",
@@ -289,7 +289,7 @@ fn convert_tck_to_trx_respects_positions_dtype() {
         .unwrap();
     trx_rs::write_tractogram(&tck, &tractogram, &ConversionOptions::default()).unwrap();
 
-    Command::cargo_bin("trx")
+    Command::cargo_bin("trxrs")
         .unwrap()
         .args([
             "convert",
@@ -314,7 +314,7 @@ fn convert_trk_to_trx_preserves_metadata() {
     let tmp = tempfile::TempDir::new().unwrap();
     let output = tmp.path().join("complex.trx");
 
-    Command::cargo_bin("trx")
+    Command::cargo_bin("trxrs")
         .unwrap()
         .args(["convert", input.to_str().unwrap(), output.to_str().unwrap()])
         .assert()
@@ -331,7 +331,7 @@ fn convert_to_trk_is_rejected() {
     let tmp = tempfile::TempDir::new().unwrap();
     let output = tmp.path().join("roundtrip.trk");
 
-    Command::cargo_bin("trx")
+    Command::cargo_bin("trxrs")
         .unwrap()
         .args(["convert", input.to_str().unwrap(), output.to_str().unwrap()])
         .assert()
@@ -352,7 +352,7 @@ fn convert_vtk_to_trx_can_force_ras_coordinates() {
     )
     .unwrap();
 
-    Command::cargo_bin("trx")
+    Command::cargo_bin("trxrs")
         .unwrap()
         .args([
             "convert",
