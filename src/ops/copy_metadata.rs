@@ -78,7 +78,12 @@ pub fn copy_metadata<P: TrxScalar>(
     let dpv = collect_named(source, Kind::Dpv, plan.filter(Kind::Dpv))?;
     let groups = collect_named(source, Kind::Group, plan.filter(Kind::Group))?;
 
-    let dps = filter_by_rows(dps, target.nb_streamlines(), Kind::Dps, opts.skip_mismatched)?;
+    let dps = filter_by_rows(
+        dps,
+        target.nb_streamlines(),
+        Kind::Dps,
+        opts.skip_mismatched,
+    )?;
     let dpv = filter_by_rows(dpv, target.nb_vertices(), Kind::Dpv, opts.skip_mismatched)?;
     validate_group_indices(&groups, target.nb_streamlines())?;
 
@@ -253,10 +258,34 @@ fn validate_group_indices(groups: &[(String, DataArray)], nb_streamlines: usize)
 
 fn max_group_index(arr: &DataArray, name: &str) -> Result<Option<u64>> {
     match arr.dtype() {
-        DType::Int8 => Ok(arr.cast_slice::<i8>().iter().map(|&v| v as i64).max().map(check_nonneg).transpose()?),
-        DType::Int16 => Ok(arr.cast_slice::<i16>().iter().map(|&v| v as i64).max().map(check_nonneg).transpose()?),
-        DType::Int32 => Ok(arr.cast_slice::<i32>().iter().map(|&v| v as i64).max().map(check_nonneg).transpose()?),
-        DType::Int64 => Ok(arr.cast_slice::<i64>().iter().copied().max().map(check_nonneg).transpose()?),
+        DType::Int8 => Ok(arr
+            .cast_slice::<i8>()
+            .iter()
+            .map(|&v| v as i64)
+            .max()
+            .map(check_nonneg)
+            .transpose()?),
+        DType::Int16 => Ok(arr
+            .cast_slice::<i16>()
+            .iter()
+            .map(|&v| v as i64)
+            .max()
+            .map(check_nonneg)
+            .transpose()?),
+        DType::Int32 => Ok(arr
+            .cast_slice::<i32>()
+            .iter()
+            .map(|&v| v as i64)
+            .max()
+            .map(check_nonneg)
+            .transpose()?),
+        DType::Int64 => Ok(arr
+            .cast_slice::<i64>()
+            .iter()
+            .copied()
+            .max()
+            .map(check_nonneg)
+            .transpose()?),
         DType::UInt8 => Ok(arr.cast_slice::<u8>().iter().map(|&v| v as u64).max()),
         DType::UInt16 => Ok(arr.cast_slice::<u16>().iter().map(|&v| v as u64).max()),
         DType::UInt32 => Ok(arr.cast_slice::<u32>().iter().map(|&v| v as u64).max()),
@@ -268,8 +297,7 @@ fn max_group_index(arr: &DataArray, name: &str) -> Result<Option<u64>> {
 }
 
 fn check_nonneg(value: i64) -> Result<u64> {
-    u64::try_from(value)
-        .map_err(|_| TrxError::Argument(format!("group index {value} is negative")))
+    u64::try_from(value).map_err(|_| TrxError::Argument(format!("group index {value} is negative")))
 }
 
 fn check_no_conflict(
@@ -323,7 +351,10 @@ fn check_no_dpg_conflict(target: &DataPerGroup, incoming: &DataPerGroup) -> Resu
         let Some(existing) = target.get(group) else {
             continue;
         };
-        if let Some(name) = entries.keys().find(|name| existing.contains_key(name.as_str())) {
+        if let Some(name) = entries
+            .keys()
+            .find(|name| existing.contains_key(name.as_str()))
+        {
             return Err(TrxError::Argument(format!(
                 "DPG '{group}/{name}' already exists in target; pass \
                  overwrite_conflicting_metadata to replace"
@@ -383,9 +414,15 @@ mod tests {
     #[test]
     fn copies_all_metadata_when_no_filters() {
         let mut donor = build(vec![[0.0; 3], [1.0; 3], [2.0; 3]], vec![0, 2, 3]);
-        donor.dps_arrays_mut().insert("weight".into(), scalar_f32(vec![0.5, 1.5]));
-        donor.dpv_arrays_mut().insert("fa".into(), scalar_f32(vec![0.1, 0.2, 0.3]));
-        donor.group_arrays_mut().insert("bundle".into(), group_u32(vec![0, 1]));
+        donor
+            .dps_arrays_mut()
+            .insert("weight".into(), scalar_f32(vec![0.5, 1.5]));
+        donor
+            .dpv_arrays_mut()
+            .insert("fa".into(), scalar_f32(vec![0.1, 0.2, 0.3]));
+        donor
+            .group_arrays_mut()
+            .insert("bundle".into(), group_u32(vec![0, 1]));
 
         let target = build(vec![[0.0; 3], [1.0; 3], [2.0; 3]], vec![0, 2, 3]);
 
@@ -399,15 +436,23 @@ mod tests {
         let AnyTrxFile::F32(out) = merged else {
             panic!("dtype changed");
         };
-        assert_eq!(out.dps::<f32>("weight").unwrap().as_flat_slice(), &[0.5, 1.5]);
-        assert_eq!(out.dpv::<f32>("fa").unwrap().as_flat_slice(), &[0.1, 0.2, 0.3]);
+        assert_eq!(
+            out.dps::<f32>("weight").unwrap().as_flat_slice(),
+            &[0.5, 1.5]
+        );
+        assert_eq!(
+            out.dpv::<f32>("fa").unwrap().as_flat_slice(),
+            &[0.1, 0.2, 0.3]
+        );
         assert_eq!(out.group("bundle").unwrap(), &[0, 1]);
     }
 
     #[test]
     fn streamline_count_mismatch_errors_when_dps_requested() {
         let mut donor = build(vec![[0.0; 3]], vec![0, 1]);
-        donor.dps_arrays_mut().insert("w".into(), scalar_f32(vec![1.0]));
+        donor
+            .dps_arrays_mut()
+            .insert("w".into(), scalar_f32(vec![1.0]));
         let target = build(vec![[0.0; 3], [1.0; 3]], vec![0, 1, 2]);
 
         let err = copy_metadata_any_trx(
@@ -422,9 +467,13 @@ mod tests {
     #[test]
     fn name_collision_errors_without_overwrite() {
         let mut donor = build(vec![[0.0; 3]], vec![0, 1]);
-        donor.dps_arrays_mut().insert("w".into(), scalar_f32(vec![2.0]));
+        donor
+            .dps_arrays_mut()
+            .insert("w".into(), scalar_f32(vec![2.0]));
         let mut target = build(vec![[0.0; 3]], vec![0, 1]);
-        target.dps_arrays_mut().insert("w".into(), scalar_f32(vec![1.0]));
+        target
+            .dps_arrays_mut()
+            .insert("w".into(), scalar_f32(vec![1.0]));
 
         let err = copy_metadata_any_trx(
             AnyTrxFile::F32(target),
@@ -438,9 +487,13 @@ mod tests {
     #[test]
     fn overwrite_replaces_existing_entry() {
         let mut donor = build(vec![[0.0; 3]], vec![0, 1]);
-        donor.dps_arrays_mut().insert("w".into(), scalar_f32(vec![2.0]));
+        donor
+            .dps_arrays_mut()
+            .insert("w".into(), scalar_f32(vec![2.0]));
         let mut target = build(vec![[0.0; 3]], vec![0, 1]);
-        target.dps_arrays_mut().insert("w".into(), scalar_f32(vec![1.0]));
+        target
+            .dps_arrays_mut()
+            .insert("w".into(), scalar_f32(vec![1.0]));
 
         let merged = copy_metadata_any_trx(
             AnyTrxFile::F32(target),
@@ -460,9 +513,15 @@ mod tests {
     #[test]
     fn selective_copy_only_named_dps() {
         let mut donor = build(vec![[0.0; 3]], vec![0, 1]);
-        donor.dps_arrays_mut().insert("a".into(), scalar_f32(vec![1.0]));
-        donor.dps_arrays_mut().insert("b".into(), scalar_f32(vec![2.0]));
-        donor.dpv_arrays_mut().insert("fa".into(), scalar_f32(vec![0.5]));
+        donor
+            .dps_arrays_mut()
+            .insert("a".into(), scalar_f32(vec![1.0]));
+        donor
+            .dps_arrays_mut()
+            .insert("b".into(), scalar_f32(vec![2.0]));
+        donor
+            .dpv_arrays_mut()
+            .insert("fa".into(), scalar_f32(vec![0.5]));
         let target = build(vec![[0.0; 3]], vec![0, 1]);
 
         let merged = copy_metadata_any_trx(
@@ -478,13 +537,18 @@ mod tests {
             panic!("dtype changed");
         };
         assert_eq!(out.dps_names(), vec!["a"]);
-        assert!(out.dpv_names().is_empty(), "dpv should not have been copied");
+        assert!(
+            out.dpv_names().is_empty(),
+            "dpv should not have been copied"
+        );
     }
 
     #[test]
     fn group_index_out_of_bounds_errors() {
         let mut donor = build(vec![[0.0; 3]], vec![0, 1]);
-        donor.group_arrays_mut().insert("bad".into(), group_u32(vec![5]));
+        donor
+            .group_arrays_mut()
+            .insert("bad".into(), group_u32(vec![5]));
         let target = build(vec![[0.0; 3]], vec![0, 1]);
 
         let err = copy_metadata_any_trx(

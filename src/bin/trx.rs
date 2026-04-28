@@ -973,7 +973,9 @@ fn export_groups_by_pattern(
 
     if groups_to_export.is_empty() {
         if !has_any_groups {
-            eprintln!("Warning: --group-export produced no output — the input TRX file has no groups.");
+            eprintln!(
+                "Warning: --group-export produced no output — the input TRX file has no groups."
+            );
         } else if !filter_set.is_empty() {
             eprintln!(
                 "Warning: --group-export produced no output — none of the requested groups ({}) were found in the file.",
