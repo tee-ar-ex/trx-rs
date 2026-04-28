@@ -1,8 +1,10 @@
 pub mod connectivity;
+pub mod copy_metadata;
 pub mod merge;
 pub mod streamline_ops;
 pub mod subset;
 
+pub use copy_metadata::{copy_metadata, copy_metadata_any_trx, CopyMetadataOptions};
 pub use merge::{concatenate_any_trx, merge_trx_shards, ConcatenateOptions};
 pub use streamline_ops::{
     difference, difference_indices, intersection, intersection_indices, remove_duplicates,

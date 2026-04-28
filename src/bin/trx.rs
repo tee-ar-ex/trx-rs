@@ -3,10 +3,11 @@ use std::path::{Path, PathBuf};
 
 use clap::{Parser, Subcommand, ValueEnum};
 use trx_rs::{
-    concatenate_any_trx, convert, detect_format, header_from_reference, inspect_vtk_declared_space,
-    read_tractogram, retain_representative_indices, subset_streamlines, write_tractogram,
-    AnyTrxFile, ConcatenateOptions, ConversionOptions, DType, DuplicateRemovalMode,
-    DuplicateRemovalParams, Format, Header, Tractogram, TrxError, TrxScalar, VtkCoordinateMode,
+    concatenate_any_trx, convert, copy_metadata_any_trx, detect_format, header_from_reference,
+    inspect_vtk_declared_space, read_tractogram, retain_representative_indices, subset_streamlines,
+    write_tractogram, AnyTrxFile, ConcatenateOptions, ConversionOptions, CopyMetadataOptions,
+    DType, DuplicateRemovalMode, DuplicateRemovalParams, Format, Header, Tractogram, TrxError,
+    TrxScalar, VtkCoordinateMode,
 };
 
 #[derive(Parser, Debug)]
@@ -82,6 +83,42 @@ enum Command {
         /// Remove duplicate streamlines (exact byte match).
         #[arg(long = "remove-identical")]
         remove_identical: bool,
+    },
+    /// Copy DPS / DPV / groups (and optionally DPG) from one TRX onto another.
+    ///
+    /// The donor and target must describe the same streamlines (matching
+    /// `nb_streamlines` and `nb_vertices` for the kinds being copied). When
+    /// `--output` is omitted, the target is rewritten in place via a sibling
+    /// temp file and atomic rename.
+    CopyMetadata {
+        /// Target TRX whose metadata will be augmented.
+        target: PathBuf,
+        /// Donor TRX whose metadata is read.
+        #[arg(long = "from")]
+        from: PathBuf,
+        /// Output path. If omitted, TARGET is rewritten in place.
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+        /// Copy only this DPS array (repeatable).
+        #[arg(long = "dps")]
+        dps: Vec<String>,
+        /// Copy only this DPV array (repeatable).
+        #[arg(long = "dpv")]
+        dpv: Vec<String>,
+        /// Copy only this group (repeatable).
+        #[arg(long = "group")]
+        groups: Vec<String>,
+        /// Also copy data-per-group entries for the selected groups.
+        #[arg(long = "copy-dpg")]
+        copy_dpg: bool,
+        /// If a metadata key already exists on the target, replace it with the
+        /// donor's. Without this flag, name collisions abort the operation.
+        #[arg(long = "overwrite-conflicting-metadata")]
+        overwrite_conflicting_metadata: bool,
+        /// Skip donor arrays whose row count does not match the target instead
+        /// of aborting.
+        #[arg(long = "skip-mismatched")]
+        skip_mismatched: bool,
     },
     /// Extract a subset of streamlines from a TRX file.
     Subset {
@@ -213,6 +250,28 @@ fn run(cli: Cli) -> trx_rs::Result<i32> {
             remove_invalid,
             remove_identical,
         } => validate_trx(&input, output.as_deref(), remove_invalid, remove_identical).map(ok),
+        Command::CopyMetadata {
+            target,
+            from,
+            output,
+            dps,
+            dpv,
+            groups,
+            copy_dpg,
+            overwrite_conflicting_metadata,
+            skip_mismatched,
+        } => copy_metadata_trx(
+            &target,
+            &from,
+            output.as_deref(),
+            &dps,
+            &dpv,
+            &groups,
+            copy_dpg,
+            overwrite_conflicting_metadata,
+            skip_mismatched,
+        )
+        .map(ok),
         Command::Subset {
             input,
             output,
@@ -355,6 +414,104 @@ fn load_concat_input(
             tractogram.to_trx(DType::Float32)
         }
     }
+}
+
+// ── copy-metadata ─────────────────────────────────────────────────────────────
+
+#[allow(clippy::too_many_arguments)]
+fn copy_metadata_trx(
+    target: &Path,
+    from: &Path,
+    output: Option<&Path>,
+    dps: &[String],
+    dpv: &[String],
+    groups: &[String],
+    copy_dpg: bool,
+    overwrite_conflicting_metadata: bool,
+    skip_mismatched: bool,
+) -> trx_rs::Result<()> {
+    if detect_format(target)? != Format::Trx {
+        return Err(TrxError::Argument(
+            "copy-metadata target must be a TRX path".into(),
+        ));
+    }
+    if detect_format(from)? != Format::Trx {
+        return Err(TrxError::Argument(
+            "copy-metadata --from must be a TRX path".into(),
+        ));
+    }
+    if let Some(out) = output {
+        if detect_format(out)? != Format::Trx {
+            return Err(TrxError::Argument(
+                "copy-metadata --output must be a TRX path".into(),
+            ));
+        }
+    }
+
+    let target_file = AnyTrxFile::load(target)?;
+    let donor = AnyTrxFile::load(from)?;
+    let opts = CopyMetadataOptions {
+        dps: cli_filter(dps),
+        dpv: cli_filter(dpv),
+        groups: cli_filter(groups),
+        copy_dpg,
+        overwrite_conflicting_metadata,
+        skip_mismatched,
+    };
+    let merged = copy_metadata_any_trx(target_file, &donor, &opts)?;
+
+    match output {
+        Some(out) => merged.save(out),
+        None => save_in_place(merged, target),
+    }
+}
+
+fn cli_filter(values: &[String]) -> Option<Vec<String>> {
+    if values.is_empty() {
+        None
+    } else {
+        Some(values.to_vec())
+    }
+}
+
+/// Save `file` to `path`, going through a sibling temp path so a crash
+/// mid-write cannot corrupt the original.
+fn save_in_place(file: AnyTrxFile, path: &Path) -> trx_rs::Result<()> {
+    let parent = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let basename = path
+        .file_name()
+        .ok_or_else(|| TrxError::Argument(format!("invalid target path '{}'", path.display())))?;
+    let temp_path = parent.join(format!(
+        ".{}.copy-metadata.tmp-{}",
+        basename.to_string_lossy(),
+        std::process::id()
+    ));
+
+    // Clear any leftover temp from a previous failed run.
+    let _ = std::fs::remove_file(&temp_path);
+    let _ = std::fs::remove_dir_all(&temp_path);
+
+    if let Err(err) = file.save(&temp_path) {
+        let _ = std::fs::remove_file(&temp_path);
+        let _ = std::fs::remove_dir_all(&temp_path);
+        return Err(err);
+    }
+
+    // Drop the source file's mmaps before replacing the on-disk path.
+    drop(file);
+
+    if path.exists() {
+        if path.is_dir() {
+            std::fs::remove_dir_all(path)?;
+        } else {
+            std::fs::remove_file(path)?;
+        }
+    }
+    std::fs::rename(&temp_path, path)?;
+    Ok(())
 }
 
 // ── info ──────────────────────────────────────────────────────────────────────
@@ -808,9 +965,27 @@ fn export_groups_by_pattern(
 
     let all_groups = file.groups_owned();
     let filter_set: HashSet<&str> = filter_groups.iter().map(String::as_str).collect();
-    let groups_to_export = all_groups
+    let has_any_groups = !all_groups.is_empty();
+    let groups_to_export: Vec<_> = all_groups
         .into_iter()
-        .filter(|(name, _)| filter_set.is_empty() || filter_set.contains(name.as_str()));
+        .filter(|(name, _)| filter_set.is_empty() || filter_set.contains(name.as_str()))
+        .collect();
+
+    if groups_to_export.is_empty() {
+        if !has_any_groups {
+            eprintln!(
+                "Warning: --group-export produced no output — the input TRX file has no groups."
+            );
+        } else if !filter_set.is_empty() {
+            eprintln!(
+                "Warning: --group-export produced no output — none of the requested groups ({}) were found in the file.",
+                filter_groups.join(", ")
+            );
+        } else {
+            eprintln!("Warning: --group-export produced no output files.");
+        }
+        return Ok(());
+    }
 
     for (group_name, streamline_indices) in groups_to_export {
         let out_path_str = pattern.replace("{groupname}", &group_name);

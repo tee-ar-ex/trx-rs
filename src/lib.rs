@@ -31,11 +31,12 @@ pub use formats::{
 pub use header::Header;
 pub use mmap_backing::MmapBacking;
 pub use ops::{
-    build_streamline_aabbs, build_streamline_aabbs_from_slices, concatenate_any_trx, difference,
-    difference_indices, intersection, intersection_indices, merge_trx_shards, query_aabb,
-    query_aabb_cached, remove_duplicates, remove_duplicates_tractogram,
-    retain_representative_indices, retain_tractogram_representative_indices, streamline_union,
-    subset_streamlines, ConcatenateOptions, DuplicateRemovalMode, DuplicateRemovalParams,
+    build_streamline_aabbs, build_streamline_aabbs_from_slices, concatenate_any_trx, copy_metadata,
+    copy_metadata_any_trx, difference, difference_indices, intersection, intersection_indices,
+    merge_trx_shards, query_aabb, query_aabb_cached, remove_duplicates,
+    remove_duplicates_tractogram, retain_representative_indices,
+    retain_tractogram_representative_indices, streamline_union, subset_streamlines,
+    ConcatenateOptions, CopyMetadataOptions, DuplicateRemovalMode, DuplicateRemovalParams,
     StreamlineAabb,
 };
 pub use reference::header_from_reference;
