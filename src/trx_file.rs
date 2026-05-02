@@ -373,13 +373,15 @@ impl<P: TrxScalar> TrxFile<P> {
 
     // ── Saving ──────────────────────────────────────────────────────
 
-    /// Save to a directory.
+    /// Save to a directory. The `offsets.*` array is written as `uint32` if
+    /// every offset fits in `u32`, otherwise as `uint64`.
     pub fn save_to_directory(&self, path: &Path) -> Result<()> {
         crate::io::directory::save_to_directory(self, path)
     }
 
     /// Save to a `.trx` zip archive. All entries are Stored (no compression):
-    /// DEFLATE rarely pays off on float-heavy tractography data.
+    /// DEFLATE rarely pays off on float-heavy tractography data. The
+    /// `offsets.*` array width is auto-picked (uint32 if it fits, else uint64).
     pub fn save_to_zip(&self, path: &Path) -> Result<()> {
         crate::io::zip::save_to_zip(self, path)
     }

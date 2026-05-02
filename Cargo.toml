@@ -7,6 +7,11 @@ edition = "2021"
 members = ["python"]
 resolver = "2"
 
+[features]
+default = ["parallel"]
+# Enables rayon-parallel `apply_transform_in_place` over streamline points.
+parallel = ["dep:rayon"]
+
 [dependencies]
 memmap2 = "0.9"
 bytemuck = { version = "1", features = ["derive"] }
@@ -20,6 +25,9 @@ thiserror = "2"
 tempfile = "3"
 clap = { version = "4", features = ["derive"] }
 rand = "0.8"
+itk-transforms-rs = { version = "0.1.0", git = "https://github.com/PennLINC/itk-transforms-rs" }
+nalgebra = "0.33"
+rayon = { version = "1", optional = true }
 
 [dev-dependencies]
 ureq = "3"

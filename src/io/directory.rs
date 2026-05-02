@@ -12,9 +12,8 @@ use crate::mmap_backing::vec_to_bytes;
 use crate::mmap_backing::MmapBacking;
 use crate::trx_file::{DataArray, DataPerGroup, TrxFile, TrxParts};
 
-fn offsets_as_u32_bytes(offsets: &[u32]) -> Vec<u8> {
-    crate::mmap_backing::vec_to_bytes(offsets.to_vec())
-}
+// Re-use `OffsetsDtype` so the directory writer matches the zip writer.
+pub(crate) use super::zip::OffsetsDtype;
 
 /// Memory-map a file as read-only.
 fn mmap_file(path: &Path) -> Result<Mmap> {
@@ -221,8 +220,10 @@ fn convert_offsets_to_u32(
     }
 }
 
-/// Save a `TrxFile<P>` to an uncompressed directory.
+/// Save a `TrxFile<P>` to an uncompressed directory. The `offsets.*` array
+/// width is auto-picked: `uint32` when every offset fits, otherwise `uint64`.
 pub fn save_to_directory<P: TrxScalar>(trx: &TrxFile<P>, dir: &Path) -> Result<()> {
+    let offsets_dtype = OffsetsDtype::pick_for(trx.offsets());
     fs::create_dir_all(dir)?;
 
     // Header
@@ -232,9 +233,9 @@ pub fn save_to_directory<P: TrxScalar>(trx: &TrxFile<P>, dir: &Path) -> Result<(
     let pos_filename = format!("positions.3.{}", P::DTYPE.name());
     fs::write(dir.join(&pos_filename), trx.positions_bytes())?;
 
-    // Offsets default to compact uint32 on disk.
-    let offsets_filename = "offsets.uint32";
-    let offsets_bytes = offsets_as_u32_bytes(trx.offsets());
+    // Offsets — written at `offsets_dtype`'s width.
+    let offsets_filename = format!("offsets.{}", offsets_dtype.suffix());
+    let offsets_bytes = offsets_dtype.encode(trx.offsets());
     fs::write(dir.join(offsets_filename), offsets_bytes)?;
 
     // DPS

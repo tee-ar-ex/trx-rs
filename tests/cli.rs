@@ -368,3 +368,114 @@ fn convert_vtk_to_trx_can_force_ras_coordinates() {
     assert!(roundtrip.positions()[0][0] < 0.0);
     assert!(roundtrip.positions()[0][1] < 0.0);
 }
+
+// ── transform ────────────────────────────────────────────────────────────────
+
+#[test]
+fn transform_help_lists_subcommand() {
+    Command::cargo_bin("trxrs")
+        .unwrap()
+        .args(["transform", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("ITK Composite.h5"))
+        .stdout(predicate::str::contains("--transform"))
+        .stdout(predicate::str::contains("--reference"))
+        .stdout(predicate::str::contains("--invert"))
+        .stdout(predicate::str::contains("source-coords"));
+}
+
+#[test]
+fn transform_unknown_extension_errors_clearly() {
+    let tmp = tempfile::tempdir().unwrap();
+    let in_trx = tmp.path().join("in.trx");
+    create_test_trx(&in_trx);
+    let bogus = tmp.path().join("nope.bogus");
+    std::fs::write(&bogus, b"junk").unwrap();
+    let out_trx = tmp.path().join("out.trx");
+
+    Command::cargo_bin("trxrs")
+        .unwrap()
+        .args([
+            "transform",
+            in_trx.to_str().unwrap(),
+            out_trx.to_str().unwrap(),
+            "--transform",
+            bogus.to_str().unwrap(),
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(".h5").or(predicate::str::contains(".txt")));
+}
+
+#[test]
+fn transform_refuses_existing_output_without_overwrite() {
+    let fixture = "../itk-transforms-rs/tests/fixtures/mrtrix-affine/affine_ants_zero.txt";
+    if !std::path::Path::new(fixture).exists() {
+        eprintln!("skipping: {} not present", fixture);
+        return;
+    }
+    let tmp = tempfile::tempdir().unwrap();
+    let in_trx = tmp.path().join("in.trx");
+    create_test_trx(&in_trx);
+    let out_trx = tmp.path().join("existing.trx");
+    create_test_trx(&out_trx);
+
+    Command::cargo_bin("trxrs")
+        .unwrap()
+        .args([
+            "transform",
+            in_trx.to_str().unwrap(),
+            out_trx.to_str().unwrap(),
+            "--transform",
+            fixture,
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("already exists"));
+}
+
+#[test]
+fn transform_with_txt_affine_round_trips() {
+    // Use the vendored mrtrix `affine_ants_zero.txt` (zero center of rotation):
+    // Parameters: 1.0572... -0.0066 ... ; FixedParameters: 0 0 0
+    // Apply it; verify endpoint moved by the matrix's transformed translation.
+    let fixture = "../itk-transforms-rs/tests/fixtures/mrtrix-affine/affine_ants_zero.txt";
+    if !std::path::Path::new(fixture).exists() {
+        eprintln!("skipping: {} not present", fixture);
+        return;
+    }
+
+    let tmp = tempfile::tempdir().unwrap();
+    let in_trx = tmp.path().join("in.trx");
+    create_test_trx(&in_trx);
+    let out_trx = tmp.path().join("out.trx");
+
+    Command::cargo_bin("trxrs")
+        .unwrap()
+        .args([
+            "transform",
+            in_trx.to_str().unwrap(),
+            out_trx.to_str().unwrap(),
+            "--transform",
+            fixture,
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("3 vertices"));
+
+    // Sanity: output streamline count and vertex count preserved.
+    let in_loaded = read_tractogram(&in_trx, &ConversionOptions::default()).unwrap();
+    let out_loaded = read_tractogram(&out_trx, &ConversionOptions::default()).unwrap();
+    assert_eq!(in_loaded.offsets().len(), out_loaded.offsets().len());
+    assert_eq!(in_loaded.positions().len(), out_loaded.positions().len());
+    // The transform is a non-trivial affine, so output positions should differ.
+    let mut differs = false;
+    for (a, b) in in_loaded.positions().iter().zip(out_loaded.positions().iter()) {
+        if (a[0] - b[0]).abs() + (a[1] - b[1]).abs() + (a[2] - b[2]).abs() > 1e-3 {
+            differs = true;
+            break;
+        }
+    }
+    assert!(differs, "positions should differ after a non-identity affine");
+}

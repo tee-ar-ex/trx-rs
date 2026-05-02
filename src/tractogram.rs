@@ -11,11 +11,17 @@ use crate::trx_file::{DataArray, DataPerGroup, TrxFile, TrxParts};
 /// Neutral in-memory streamline representation used for cross-format conversion.
 ///
 /// Positions are stored in world/RASMM-style coordinates as `f32` triplets.
+/// `dps` (data-per-streamline) and `dpv` (data-per-vertex) ride along
+/// unchanged through any operation that doesn't reorder streamlines or
+/// vertices — including [`crate::transform::apply_transform_in_place`],
+/// which only mutates the `positions` buffer.
 #[derive(Debug)]
 pub struct Tractogram {
     header: Header,
     positions: Vec<[f32; 3]>,
     offsets: Vec<u32>,
+    dps: HashMap<String, DataArray>,
+    dpv: HashMap<String, DataArray>,
     groups: HashMap<String, Vec<u32>>,
     dpg: DataPerGroup,
 }
@@ -26,6 +32,8 @@ impl Clone for Tractogram {
             header: self.header.clone(),
             positions: self.positions.clone(),
             offsets: self.offsets.clone(),
+            dps: clone_arrays(&self.dps),
+            dpv: clone_arrays(&self.dpv),
             groups: self.groups.clone(),
             dpg: clone_dpg(&self.dpg),
         }
@@ -52,6 +60,8 @@ impl Tractogram {
             header,
             positions: Vec::new(),
             offsets: vec![0],
+            dps: HashMap::new(),
+            dpv: HashMap::new(),
             groups: HashMap::new(),
             dpg: HashMap::new(),
         }
@@ -68,6 +78,8 @@ impl Tractogram {
             header: trx.header().clone(),
             positions,
             offsets: trx.offsets().to_vec(),
+            dps: clone_arrays(trx.dps_arrays()),
+            dpv: clone_arrays(trx.dpv_arrays()),
             groups: clone_groups(trx.group_arrays()),
             dpg: clone_dpg(trx.dpg_arrays()),
         }
@@ -91,6 +103,16 @@ impl Tractogram {
             header: trx.header().clone(),
             positions,
             offsets: trx.offsets_vec(),
+            dps: trx.with_typed(
+                |inner| clone_arrays(inner.dps_arrays()),
+                |inner| clone_arrays(inner.dps_arrays()),
+                |inner| clone_arrays(inner.dps_arrays()),
+            ),
+            dpv: trx.with_typed(
+                |inner| clone_arrays(inner.dpv_arrays()),
+                |inner| clone_arrays(inner.dpv_arrays()),
+                |inner| clone_arrays(inner.dpv_arrays()),
+            ),
             groups: trx.groups_owned().into_iter().collect(),
             dpg: trx.with_typed(
                 |inner| clone_dpg(inner.dpg_arrays()),
@@ -119,6 +141,16 @@ impl Tractogram {
 
     pub fn positions(&self) -> &[[f32; 3]] {
         &self.positions
+    }
+
+    /// Mutable view of the contiguous `positions` buffer.
+    ///
+    /// Useful for in-place spatial transforms (see [`crate::transform`]).
+    /// Streamline boundaries (`offsets`) are unaffected by point edits, so
+    /// callers may mutate the slice freely without invalidating any
+    /// metadata.
+    pub fn positions_mut(&mut self) -> &mut [[f32; 3]] {
+        &mut self.positions
     }
 
     pub fn offsets(&self) -> &[u32] {
@@ -155,6 +187,34 @@ impl Tractogram {
 
     pub fn dpg(&self) -> &DataPerGroup {
         &self.dpg
+    }
+
+    pub fn dps_arrays(&self) -> &HashMap<String, DataArray> {
+        &self.dps
+    }
+
+    pub fn dpv_arrays(&self) -> &HashMap<String, DataArray> {
+        &self.dpv
+    }
+
+    pub fn dps_names(&self) -> impl Iterator<Item = &str> {
+        self.dps.keys().map(String::as_str)
+    }
+
+    pub fn dpv_names(&self) -> impl Iterator<Item = &str> {
+        self.dpv.keys().map(String::as_str)
+    }
+
+    /// Insert (or replace) a DPS field. The data array's row count must
+    /// equal the current streamline count.
+    pub fn insert_dps(&mut self, name: impl Into<String>, data: DataArray) {
+        self.dps.insert(name.into(), data);
+    }
+
+    /// Insert (or replace) a DPV field. The data array's row count must
+    /// equal the current vertex count.
+    pub fn insert_dpv(&mut self, name: impl Into<String>, data: DataArray) {
+        self.dpv.insert(name.into(), data);
     }
 
     pub fn subset_streamlines(&self, indices: &[usize]) -> Result<Self> {
@@ -261,8 +321,8 @@ impl Tractogram {
             header,
             positions_backing: MmapBacking::Owned(vec_to_bytes(positions)),
             offsets_backing: MmapBacking::Owned(vec_to_bytes(self.offsets.clone())),
-            dps: HashMap::new(),
-            dpv: HashMap::new(),
+            dps: clone_arrays(&self.dps),
+            dpv: clone_arrays(&self.dpv),
             groups: groups_to_data_arrays(&self.groups),
             dpg: clone_dpg(&self.dpg),
             tempdir: None,
@@ -292,6 +352,13 @@ fn clone_groups(groups: &HashMap<String, DataArray>) -> HashMap<String, Vec<u32>
     groups
         .iter()
         .map(|(name, arr)| (name.clone(), arr.cast_slice::<u32>().to_vec()))
+        .collect()
+}
+
+fn clone_arrays(arrays: &HashMap<String, DataArray>) -> HashMap<String, DataArray> {
+    arrays
+        .iter()
+        .map(|(name, arr)| (name.clone(), arr.clone_owned()))
         .collect()
 }
 

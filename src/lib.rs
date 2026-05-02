@@ -8,6 +8,7 @@
 pub mod any_trx_file;
 pub mod dtype;
 pub mod error;
+pub mod fit;
 pub mod formats;
 pub mod header;
 pub mod io;
@@ -16,6 +17,7 @@ pub mod ops;
 pub mod reference;
 pub mod stream;
 pub mod tractogram;
+pub mod transform;
 pub mod trx_file;
 pub mod typed_view;
 pub mod vertex;
@@ -42,6 +44,12 @@ pub use ops::{
 pub use reference::header_from_reference;
 pub use stream::TrxStream;
 pub use tractogram::Tractogram;
+pub use transform::{apply_transform, apply_transform_in_place};
 pub use trx_file::{DataArray, DataArrayInfo, TrxFile};
 pub use typed_view::TypedView2D;
 pub use vertex::Position3;
+
+pub use fit::{
+    fit_catmull_rom_indices, sample_catmull_rom, sample_catmull_rom_into, simplify_streamline,
+    simplify_tractogram, FittedMarker, SimplifyOptions, SimplifyStats, FITTED_MARKER_KEY,
+};

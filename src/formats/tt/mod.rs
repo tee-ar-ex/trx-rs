@@ -108,13 +108,30 @@ fn read_labels_sidecar(path: &Path) -> Result<Vec<String>> {
     let file_name = sidecar
         .file_name()
         .and_then(|name| name.to_str())
-        .ok_or_else(|| TrxError::Argument(format!("invalid TT path {}", path.display())))?;
-    sidecar.set_file_name(format!("{file_name}.txt"));
-    if !sidecar.exists() {
-        return Ok(Vec::new());
+        .ok_or_else(|| TrxError::Argument(format!("invalid TT path {}", path.display())))?
+        .to_string();
+
+    // Try <name>.txt first (e.g. human.tt.gz.txt), then DSI Studio convention
+    // of stripping the .tt/.tt.gz extension (e.g. human.txt).
+    let candidates = [
+        format!("{file_name}.txt"),
+        file_name
+            .strip_suffix(".tt.gz")
+            .or_else(|| file_name.strip_suffix(".tt"))
+            .map(|stem| format!("{stem}.txt"))
+            .unwrap_or_default(),
+    ];
+    for candidate in &candidates {
+        if candidate.is_empty() {
+            continue;
+        }
+        sidecar.set_file_name(candidate);
+        if sidecar.exists() {
+            let text = std::fs::read_to_string(&sidecar)?;
+            return Ok(text.lines().map(|line| line.trim().to_string()).collect());
+        }
     }
-    let text = std::fs::read_to_string(sidecar)?;
-    Ok(text.lines().map(|line| line.trim().to_string()).collect())
+    Ok(Vec::new())
 }
 
 fn resolve_group_names(

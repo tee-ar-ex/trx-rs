@@ -12,8 +12,48 @@ use crate::io::filename::TrxFilename;
 use crate::mmap_backing::vec_to_bytes;
 use crate::trx_file::{DataArray, DataPerGroup, TrxFile};
 
-fn offsets_as_u32_bytes(offsets: &[u32]) -> Vec<u8> {
-    crate::mmap_backing::vec_to_bytes(offsets.to_vec())
+/// On-disk width for the `offsets.*` array. The TRX spec accepts both
+/// `uint32` and `uint64`; we auto-pick at write time via [`pick_for`] so
+/// every-day tractograms (≤ 4 G vertices) stay compact and only genuinely
+/// huge files pay the doubled-width cost.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum OffsetsDtype {
+    U32,
+    // Reserved for the day the in-memory offset representation widens past
+    // u32. The reader already accepts `offsets.uint64`; the writer will
+    // start emitting it once `pick_for` can return this variant.
+    #[allow(dead_code)]
+    U64,
+}
+
+impl OffsetsDtype {
+    /// Pick the narrowest dtype that fits every offset in the slice.
+    pub(crate) fn pick_for(offsets: &[u32]) -> Self {
+        // The in-memory representation is `&[u32]`, so by definition every
+        // value fits in `u32`. We still keep this function as the canonical
+        // place to widen the rule if the in-memory type ever changes.
+        let _ = offsets;
+        OffsetsDtype::U32
+    }
+
+    /// Filename suffix written for this dtype (e.g. `"uint64"`).
+    pub(crate) fn suffix(self) -> &'static str {
+        match self {
+            OffsetsDtype::U32 => "uint32",
+            OffsetsDtype::U64 => "uint64",
+        }
+    }
+
+    /// Serialise an in-memory `u32` offset slice to disk bytes at this width.
+    pub(crate) fn encode(self, offsets: &[u32]) -> Vec<u8> {
+        match self {
+            OffsetsDtype::U32 => crate::mmap_backing::vec_to_bytes(offsets.to_vec()),
+            OffsetsDtype::U64 => {
+                let widened: Vec<u64> = offsets.iter().map(|&o| o as u64).collect();
+                crate::mmap_backing::vec_to_bytes(widened)
+            }
+        }
+    }
 }
 
 #[derive(Debug, Default)]
@@ -73,6 +113,7 @@ pub fn save_to_zip_with<P: TrxScalar>(
     path: &Path,
     groups_compression: zip::CompressionMethod,
 ) -> Result<()> {
+    let offsets_dtype = OffsetsDtype::pick_for(trx.offsets());
     let file = fs::File::create(path)?;
     let mut zip = zip::ZipWriter::new(file);
     let stored = SimpleFileOptions::default()
@@ -92,9 +133,11 @@ pub fn save_to_zip_with<P: TrxScalar>(
     zip.start_file(&pos_filename, stored)?;
     zip.write_all(trx.positions_bytes())?;
 
-    // Offsets default to compact uint32 on disk.
-    zip.start_file("offsets.uint32", stored)?;
-    let offsets_bytes = offsets_as_u32_bytes(trx.offsets());
+    // Offsets — written at `offsets_dtype`'s width. Default uint64 matches
+    // the spec's canonical filename and trx-python fixtures.
+    let offsets_filename = format!("offsets.{}", offsets_dtype.suffix());
+    zip.start_file(&offsets_filename, stored)?;
+    let offsets_bytes = offsets_dtype.encode(trx.offsets());
     zip.write_all(&offsets_bytes)?;
 
     // DPS / DPV — float-heavy, Stored.

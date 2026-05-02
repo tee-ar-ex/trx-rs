@@ -89,7 +89,9 @@ fn positions_bytes_for_gpu() {
 }
 
 #[test]
-fn zip_round_trip_writes_uint32_offsets_by_default() {
+fn zip_round_trip_writes_uint32_offsets_when_they_fit() {
+    // Small fixtures (every offset fits in u32, which is true for all
+    // realistic inputs) write `offsets.uint32`. The reader handles both.
     let original = create_test_trx(3, 7);
     let dir = tempfile::TempDir::new().unwrap();
     let zip_path = dir.path().join("test.trx");
@@ -103,7 +105,7 @@ fn zip_round_trip_writes_uint32_offsets_by_default() {
 }
 
 #[test]
-fn directory_round_trip_writes_uint32_offsets_by_default() {
+fn directory_round_trip_writes_uint32_offsets_when_they_fit() {
     let original = create_test_trx(3, 7);
     let dir = tempfile::TempDir::new().unwrap();
     let out_dir = dir.path().join("test.trxd");

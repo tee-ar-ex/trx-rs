@@ -4,10 +4,10 @@ use std::path::{Path, PathBuf};
 use clap::{Parser, Subcommand, ValueEnum};
 use trx_rs::{
     concatenate_any_trx, convert, copy_metadata_any_trx, detect_format, header_from_reference,
-    inspect_vtk_declared_space, read_tractogram, retain_representative_indices, subset_streamlines,
-    write_tractogram, AnyTrxFile, ConcatenateOptions, ConversionOptions, CopyMetadataOptions,
-    DType, DuplicateRemovalMode, DuplicateRemovalParams, Format, Header, Tractogram, TrxError,
-    TrxScalar, VtkCoordinateMode,
+    inspect_vtk_declared_space, read_tractogram, retain_representative_indices,
+    simplify_tractogram, subset_streamlines, write_tractogram, AnyTrxFile, ConcatenateOptions,
+    ConversionOptions, CopyMetadataOptions, DType, DuplicateRemovalMode, DuplicateRemovalParams,
+    Format, Header, SimplifyOptions, Tractogram, TrxError, TrxScalar, VtkCoordinateMode,
 };
 
 #[derive(Parser, Debug)]
@@ -72,6 +72,70 @@ enum Command {
         reference: PathBuf,
         output: PathBuf,
     },
+    /// Apply an ANTs/ITK spatial transform to a TRX tractogram (point-warp).
+    /// Rust counterpart to `antsApplyTransformsToTRX`.
+    ///
+    /// THE OPPOSITE-NAMED H5 RULE: to warp streamlines FROM space A TO space
+    /// B, pass `from-B_to-A_xfm.h5` — the same file you would give
+    /// `antsApplyTransforms` to warp an image of B onto A's grid. (Same
+    /// convention as `antsApplyTransformsToPoints`.)
+    ///
+    /// CARTOON BIDS EXAMPLES — given `sub-01`'s paired h5 files:
+    ///
+    /// • You have `sub-01_space-ACPC_tracts.trx` and want tracts in
+    ///   MNI152NLin2009cAsym → pass `sub-01_from-MNI152NLin2009cAsym_to-ACPC_xfm.h5`
+    ///
+    /// • You have `sub-01_space-MNI152NLin2009cAsym_tracts.trx` and want
+    ///   tracts in ACPC → pass `sub-01_from-ACPC_to-MNI152NLin2009cAsym_xfm.h5`
+    ///
+    /// • You have `sub-01_space-T1w_tracts.trx` and want tracts in
+    ///   MNI152NLin6Asym → pass `sub-01_from-MNI152NLin6Asym_to-T1w_xfm.h5`
+    ///
+    /// WHY OPPOSITE-NAMED? Image warping with antsApplyTransforms is
+    /// pull-based: the chain inside `from-X_to-Y_xfm.h5` (the file that warps
+    /// X-images onto a Y-grid) internally maps target Y voxels back to source
+    /// X coordinates. Applied to a *point*, that same chain sends a Y-point
+    /// to an X-point — so warping a vertex A→B requires the chain in the
+    /// opposite-named file `from-B_to-A_xfm.h5`.
+    ///
+    /// FULL INVOCATION (warp ACPC tracts into MNI):
+    ///   trxrs transform sub-01_space-ACPC_tracts.trx
+    ///   sub-01_space-MNI152NLin2009cAsym_tracts.trx
+    ///   --transform sub-01_from-MNI152NLin2009cAsym_to-ACPC_xfm.h5
+    Transform {
+        /// Source TRX file (e.g. `sub-01_space-ACPC_tracts.trx`).
+        input: PathBuf,
+        /// Output TRX path (e.g. `sub-01_space-MNI152NLin2009cAsym_tracts.trx`).
+        output: PathBuf,
+        /// ANTs/ITK transform: `Composite.h5` (warp + affines), Insight
+        /// Transform File V1.0 (`.txt`, affine-only), or ITK MATLAB
+        /// (`.mat`, affine-only — what ANTs writes for
+        /// `*0GenericAffine.mat`). To warp tracts from space A to space B,
+        /// pass `from-B_to-A_xfm.h5` — the SAME file you would give
+        /// `antsApplyTransforms` to warp an image of B onto A's grid (see
+        /// the description above for the rationale).
+        #[arg(long = "transform")]
+        transform: PathBuf,
+        /// Reference NIfTI or TRX in the *target* space (the space the
+        /// streamlines will land in). Optional; if given, the output TRX
+        /// header's `voxel_to_rasmm` and `dimensions` are taken from it
+        /// (handy for downstream tooling that depends on the header). The
+        /// streamline coordinates themselves are warped regardless.
+        #[arg(long = "reference")]
+        reference: Option<PathBuf>,
+        /// Numerically invert the chain before applying. Useful only for
+        /// affine-only chains where you have one direction's `.txt`/`.mat`
+        /// and want the other; warp components cannot be numerically
+        /// inverted (you must use the paired `from-Y_to-X_xfm.h5` instead).
+        #[arg(long)]
+        invert: bool,
+        /// Replace the output file if it exists.
+        #[arg(long)]
+        overwrite: bool,
+        /// Print summary as JSON.
+        #[arg(long)]
+        json: bool,
+    },
     /// Validate a TRX file; optionally remove invalid or duplicate streamlines.
     Validate {
         input: PathBuf,
@@ -119,6 +183,36 @@ enum Command {
         /// of aborting.
         #[arg(long = "skip-mismatched")]
         skip_mismatched: bool,
+    },
+    /// Fit each streamline to a sparse Catmull-Rom control polygon and write
+    /// a TRX that's ready to load directly in trxviz-draw (no further
+    /// simplification on import).
+    ///
+    /// The output gets a `catmull_rom_fitted` marker in `header.extra` plus
+    /// default `width` (1.0 mm) and `tension` (0.5) DPV columns. By
+    /// convention the output filename ends in `.draw.trx`; the default
+    /// output path replaces the input's extension with `.draw.trx`.
+    Simplify {
+        /// Input TRX (or any format `read_tractogram` accepts).
+        input: PathBuf,
+        /// Output path. Defaults to `<input-stem>.draw.trx` next to the
+        /// input.
+        output: Option<PathBuf>,
+        /// Hausdorff tolerance in RAS+ mm.
+        #[arg(long, default_value = "1.0")]
+        epsilon: f32,
+        /// If set, keep only streamlines belonging to this group.
+        #[arg(long)]
+        group: Option<String>,
+        /// Default `width` (mm) value written as a per-vertex DPV column.
+        #[arg(long = "default-width", default_value = "1.0")]
+        default_width: f32,
+        /// Default `tension` value written as a per-vertex DPV column.
+        #[arg(long = "default-tension", default_value = "0.5")]
+        default_tension: f32,
+        /// Positions dtype for the output TRX.
+        #[arg(long = "positions-dtype", value_enum, default_value = "f32")]
+        positions_dtype: PositionDtype,
     },
     /// Extract a subset of streamlines from a TRX file.
     Subset {
@@ -244,6 +338,24 @@ fn run(cli: Cli) -> trx_rs::Result<i32> {
             reference,
             output,
         } => update_affine(&input, &reference, &output).map(ok),
+        Command::Transform {
+            input,
+            output,
+            transform,
+            reference,
+            invert,
+            overwrite,
+            json,
+        } => run_transform(
+            &input,
+            &output,
+            &transform,
+            reference.as_deref(),
+            invert,
+            overwrite,
+            json,
+        )
+        .map(ok),
         Command::Validate {
             input,
             output,
@@ -270,6 +382,24 @@ fn run(cli: Cli) -> trx_rs::Result<i32> {
             copy_dpg,
             overwrite_conflicting_metadata,
             skip_mismatched,
+        )
+        .map(ok),
+        Command::Simplify {
+            input,
+            output,
+            epsilon,
+            group,
+            default_width,
+            default_tension,
+            positions_dtype,
+        } => run_simplify(
+            &input,
+            output.as_deref(),
+            epsilon,
+            group,
+            default_width,
+            default_tension,
+            positions_dtype.into(),
         )
         .map(ok),
         Command::Subset {
@@ -527,7 +657,7 @@ fn print_info(path: &Path, stats: bool) -> trx_rs::Result<()> {
             println!("dimensions: {:?}", file.header().dimensions);
             println!("dps: {}", file.dps_entries().len());
             println!("dpv: {}", file.dpv_entries().len());
-            println!("groups: {}", file.groups_owned().len());
+            file.with_typed(print_group_names, print_group_names, print_group_names);
             file.with_typed(print_trx_dpg_info, print_trx_dpg_info, print_trx_dpg_info);
             if stats {
                 file.with_typed(print_length_stats, print_length_stats, print_length_stats);
@@ -556,6 +686,15 @@ fn print_info(path: &Path, stats: bool) -> trx_rs::Result<()> {
         }
     }
     Ok(())
+}
+
+fn print_group_names<P: TrxScalar>(trx: &trx_rs::TrxFile<P>) {
+    let mut names = trx.group_names();
+    names.sort_unstable();
+    println!("groups: {}", names.len());
+    for name in &names {
+        println!("  group: {name}");
+    }
 }
 
 fn print_trx_dpg_info<P: TrxScalar>(trx: &trx_rs::TrxFile<P>) {
@@ -593,6 +732,41 @@ fn print_length_stats<P: TrxScalar>(trx: &trx_rs::TrxFile<P>) {
     println!("min_length_mm: {min:.4}");
     println!("mean_length_mm: {:.4}", total / count as f64);
     println!("max_length_mm: {max:.4}");
+
+    let mut group_names = trx.group_names();
+    group_names.sort_unstable();
+    for name in group_names {
+        let indices = trx.group(name).unwrap();
+        let mut g_count = 0usize;
+        let mut g_total = 0.0f64;
+        let mut g_min = f64::INFINITY;
+        let mut g_max = f64::NEG_INFINITY;
+        for &idx in indices {
+            let points = trx.streamline(idx as usize);
+            let length: f64 = points
+                .windows(2)
+                .map(|pair| {
+                    let dx = (pair[1][0].to_f32() - pair[0][0].to_f32()) as f64;
+                    let dy = (pair[1][1].to_f32() - pair[0][1].to_f32()) as f64;
+                    let dz = (pair[1][2].to_f32() - pair[0][2].to_f32()) as f64;
+                    (dx * dx + dy * dy + dz * dz).sqrt()
+                })
+                .sum();
+            g_count += 1;
+            g_total += length;
+            g_min = g_min.min(length);
+            g_max = g_max.max(length);
+        }
+        if g_count == 0 {
+            println!("  {name}/min_length_mm: N/A");
+            println!("  {name}/mean_length_mm: N/A");
+            println!("  {name}/max_length_mm: N/A");
+        } else {
+            println!("  {name}/min_length_mm: {g_min:.4}");
+            println!("  {name}/mean_length_mm: {:.4}", g_total / g_count as f64);
+            println!("  {name}/max_length_mm: {g_max:.4}");
+        }
+    }
 }
 
 fn format_name(format: Format) -> &'static str {
@@ -696,6 +870,81 @@ fn update_affine(input: &Path, reference: &Path, output: &Path) -> trx_rs::Resul
         extra: old_header.extra,
     };
     file.with_updated_header(new_header).save(output)
+}
+
+// ── transform ─────────────────────────────────────────────────────────────────
+
+fn run_transform(
+    input: &Path,
+    output: &Path,
+    transform_path: &Path,
+    reference: Option<&Path>,
+    invert: bool,
+    overwrite: bool,
+    json: bool,
+) -> trx_rs::Result<()> {
+    if detect_format(input)? != Format::Trx || detect_format(output)? != Format::Trx {
+        return Err(TrxError::Argument(
+            "trx transform requires TRX input and output".into(),
+        ));
+    }
+    if output.exists() && !overwrite {
+        return Err(TrxError::Argument(format!(
+            "output '{}' already exists (pass --overwrite to replace)",
+            output.display()
+        )));
+    }
+
+    let mut chain = itk_transforms_rs::read_itk(transform_path).map_err(|e| {
+        TrxError::Format(format!(
+            "reading transform '{}': {e}",
+            transform_path.display()
+        ))
+    })?;
+    if invert {
+        chain = chain.invert().map_err(|e| {
+            TrxError::Argument(format!(
+                "--invert with non-invertible chain (warps cannot be numerically inverted): {e}"
+            ))
+        })?;
+    }
+
+    let file = AnyTrxFile::load(input)?;
+    let dtype = file.dtype();
+    let mut tractogram = Tractogram::from_any_trx(&file);
+    let n_vertices = tractogram.positions().len();
+    let n_streamlines = tractogram.offsets().len().saturating_sub(1);
+
+    trx_rs::apply_transform_in_place(&mut tractogram, &chain);
+
+    if let Some(ref_path) = reference {
+        let ref_header = header_from_reference(ref_path)?;
+        tractogram.set_spatial_metadata(ref_header.voxel_to_rasmm, ref_header.dimensions);
+    }
+
+    let out = tractogram.to_trx(dtype)?;
+    out.save(output)?;
+
+    if json {
+        let summary = serde_json::json!({
+            "output": output.display().to_string(),
+            "input": input.display().to_string(),
+            "transform": transform_path.display().to_string(),
+            "reference_applied": reference.is_some(),
+            "invert": invert,
+            "nb_streamlines": n_streamlines,
+            "nb_vertices": n_vertices,
+        });
+        println!("{}", serde_json::to_string_pretty(&summary)?);
+    } else {
+        println!(
+            "wrote {} ({} streamlines, {} vertices)",
+            output.display(),
+            n_streamlines,
+            n_vertices,
+        );
+    }
+    Ok(())
 }
 
 // ── validate ──────────────────────────────────────────────────────────────────
@@ -1018,4 +1267,67 @@ fn export_groups_by_pattern(
     }
 
     Ok(())
+}
+
+// ── simplify ──────────────────────────────────────────────────────────────────
+
+#[allow(clippy::too_many_arguments)]
+fn run_simplify(
+    input: &Path,
+    output: Option<&Path>,
+    epsilon: f32,
+    group: Option<String>,
+    default_width: f32,
+    default_tension: f32,
+    positions_dtype: DType,
+) -> trx_rs::Result<()> {
+    let input_tractogram = read_tractogram(input, &ConversionOptions::default())?;
+    let opts = SimplifyOptions {
+        epsilon_mm: epsilon,
+        group,
+        default_width_mm: default_width,
+        default_tension,
+        _parallel_chunks: None,
+    };
+    let (output_tractogram, stats) = simplify_tractogram(&input_tractogram, &opts)?;
+
+    let owned_output;
+    let output_path: &Path = match output {
+        Some(p) => p,
+        None => {
+            owned_output = default_simplify_output_path(input);
+            &owned_output
+        }
+    };
+
+    let conversion = ConversionOptions {
+        trx_positions_dtype: positions_dtype,
+        ..ConversionOptions::default()
+    };
+    write_tractogram(output_path, &output_tractogram, &conversion)?;
+
+    println!(
+        "simplified {} → {} streamlines, {} → {} vertices ({:.1}× compression), \
+         {} groups preserved → {}",
+        stats.input_streamlines,
+        stats.output_streamlines,
+        stats.input_vertices,
+        stats.output_vertices,
+        stats.vertex_compression_ratio(),
+        stats.groups_preserved,
+        output_path.display(),
+    );
+    Ok(())
+}
+
+/// `path/foo.trx` → `path/foo.draw.trx` (also handles `.trk`, `.tck`, etc.).
+/// If the input has no recognised tractogram extension we still append
+/// `.draw.trx`.
+fn default_simplify_output_path(input: &Path) -> PathBuf {
+    let parent = input.parent().unwrap_or(Path::new(""));
+    let stem = input
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "tractogram".to_string());
+    parent.join(format!("{stem}.draw.trx"))
 }
