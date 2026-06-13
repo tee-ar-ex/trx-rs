@@ -123,7 +123,7 @@ fn dps_dpv_groups_dpg_survive_full_round_trip() {
         let mut s = TrxStream::<f32>::new(Header::identity_affine(), [10, 10, 10]);
         s.push_streamline(&[[1.0, 0.0, 0.0], [2.0, 0.0, 0.0], [3.0, 0.0, 0.0]]);
         s.push_streamline(&[[10.0, 0.0, 0.0], [11.0, 0.0, 0.0]]);
-        let mut trx = s.finalize();
+        let trx = s.finalize();
         // Inject DPS/DPV via TrxParts. Easiest path: roundtrip through
         // public ops::copy_metadata… but for a self-contained test we
         // build a fresh TrxParts ourselves. Skip — instead, use

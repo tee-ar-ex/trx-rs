@@ -378,11 +378,11 @@ fn transform_help_lists_subcommand() {
         .args(["transform", "--help"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("ITK Composite.h5"))
+        .stdout(predicate::str::contains("Composite.h5"))
         .stdout(predicate::str::contains("--transform"))
         .stdout(predicate::str::contains("--reference"))
         .stdout(predicate::str::contains("--invert"))
-        .stdout(predicate::str::contains("source-coords"));
+        .stdout(predicate::str::contains("point-warp"));
 }
 
 #[test]
