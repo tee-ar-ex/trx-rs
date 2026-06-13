@@ -38,3 +38,7 @@ predicates = "3"
 [[bench]]
 name = "trx_realdata"
 harness = false
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
