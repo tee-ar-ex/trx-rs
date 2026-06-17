@@ -164,12 +164,7 @@ pub fn simplify_tractogram(
         }
         let mut remapped: Vec<u32> = members
             .iter()
-            .filter_map(|&idx| {
-                remap
-                    .get(idx as usize)
-                    .copied()
-                    .flatten()
-            })
+            .filter_map(|&idx| remap.get(idx as usize).copied().flatten())
             .collect();
         if remapped.is_empty() {
             continue;
@@ -185,7 +180,9 @@ pub fn simplify_tractogram(
     let marker = FittedMarker::new(opts.epsilon_mm);
     let json = serde_json::to_value(&marker)
         .map_err(|e| TrxError::Argument(format!("serialise fitted marker: {e}")))?;
-    output.extra_mut().insert(FITTED_MARKER_KEY.to_string(), json);
+    output
+        .extra_mut()
+        .insert(FITTED_MARKER_KEY.to_string(), json);
 
     Ok((output, stats))
 }
@@ -217,22 +214,15 @@ mod tests {
             let pts = dense_streamline(s as f32 * 1.0, vertices);
             t.push_streamline(&pts).unwrap();
         }
-        t.insert_group(
-            "even",
-            (0..streamline_count as u32).step_by(2).collect(),
-        );
-        t.insert_group(
-            "odd",
-            (1..streamline_count as u32).step_by(2).collect(),
-        );
+        t.insert_group("even", (0..streamline_count as u32).step_by(2).collect());
+        t.insert_group("odd", (1..streamline_count as u32).step_by(2).collect());
         t
     }
 
     #[test]
     fn simplify_compresses_and_marks() {
         let input = build_input(4, 100);
-        let (output, stats) =
-            simplify_tractogram(&input, &SimplifyOptions::default()).unwrap();
+        let (output, stats) = simplify_tractogram(&input, &SimplifyOptions::default()).unwrap();
 
         assert_eq!(stats.input_streamlines, 4);
         assert_eq!(stats.output_streamlines, 4);

@@ -351,7 +351,7 @@ impl Default for Tractogram {
 fn clone_groups(groups: &HashMap<String, DataArray>) -> HashMap<String, Vec<u32>> {
     groups
         .iter()
-        .map(|(name, arr)| (name.clone(), arr.cast_slice::<u32>().to_vec()))
+        .map(|(name, arr)| (name.clone(), arr.to_u32_vec()))
         .collect()
 }
 

@@ -116,12 +116,8 @@ pub fn save_to_zip_with<P: TrxScalar>(
     let offsets_dtype = OffsetsDtype::pick_for(trx.offsets());
     let file = fs::File::create(path)?;
     let mut zip = zip::ZipWriter::new(file);
-    let stored = SimpleFileOptions::default()
-        .compression_method(zip::CompressionMethod::Stored)
-        .large_file(true);
-    let groups_opts = SimpleFileOptions::default()
-        .compression_method(groups_compression)
-        .large_file(true);
+    let stored = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored).large_file(true);
+    let groups_opts = SimpleFileOptions::default().compression_method(groups_compression).large_file(true);
 
     // Header
     let header_json = trx.header().to_json()?;
@@ -133,8 +129,7 @@ pub fn save_to_zip_with<P: TrxScalar>(
     zip.start_file(&pos_filename, stored)?;
     zip.write_all(trx.positions_bytes())?;
 
-    // Offsets — written at `offsets_dtype`'s width. Default uint64 matches
-    // the spec's canonical filename and trx-python fixtures.
+    // Offsets — written at `offsets_dtype`'s width.
     let offsets_filename = format!("offsets.{}", offsets_dtype.suffix());
     zip.start_file(&offsets_filename, stored)?;
     let offsets_bytes = offsets_dtype.encode(trx.offsets());

@@ -24,11 +24,7 @@ fn make_tractogram(streams: &[&[[f32; 3]]]) -> Tractogram {
 
 #[test]
 fn identity_round_trip_all_points() {
-    let pts = [
-        [1.0_f32, 2.0, 3.0],
-        [4.0, 5.0, 6.0],
-        [-7.5, 0.0, 100.25],
-    ];
+    let pts = [[1.0_f32, 2.0, 3.0], [4.0, 5.0, 6.0], [-7.5, 0.0, 100.25]];
     let mut t = make_tractogram(&[&pts]);
     let mut chain = TransformChain::new();
     chain.push_affine(Affine3::identity());
@@ -164,16 +160,8 @@ fn dps_dpv_groups_dpg_survive_full_round_trip() {
 
     // Reload and assert DPS/DPV/groups survive verbatim.
     let reloaded = AnyTrxFile::load(&out_path).unwrap();
-    let dps_names: Vec<String> = reloaded
-        .dps_entries()
-        .into_iter()
-        .map(|(n, _)| n)
-        .collect();
-    let dpv_names: Vec<String> = reloaded
-        .dpv_entries()
-        .into_iter()
-        .map(|(n, _)| n)
-        .collect();
+    let dps_names: Vec<String> = reloaded.dps_entries().into_iter().map(|(n, _)| n).collect();
+    let dpv_names: Vec<String> = reloaded.dpv_entries().into_iter().map(|(n, _)| n).collect();
     assert_eq!(
         dps_names,
         vec!["weight".to_string()],

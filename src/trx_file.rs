@@ -74,6 +74,17 @@ impl DataArray {
         let data: &[T] = cast_slice(self.as_bytes());
         TypedView2D::new(data, self.ncols)
     }
+
+    /// Convert this array to a `Vec<u32>`, handling int64/uint64 source dtypes.
+    pub fn to_u32_vec(&self) -> Vec<u32> {
+        match self.dtype {
+            DType::UInt32 => self.cast_slice::<u32>().to_vec(),
+            DType::Int32 => self.cast_slice::<i32>().iter().map(|&x| x as u32).collect(),
+            DType::UInt64 => self.cast_slice::<u64>().iter().map(|&x| x as u32).collect(),
+            DType::Int64 => self.cast_slice::<i64>().iter().map(|&x| x as u32).collect(),
+            _ => self.cast_slice::<u32>().to_vec(),
+        }
+    }
 }
 
 pub type DataPerGroup = HashMap<String, HashMap<String, DataArray>>;
@@ -301,6 +312,13 @@ impl<P: TrxScalar> TrxFile<P> {
             .map(|(name, arr)| (name.as_str(), arr.info()))
     }
 
+    /// Iterate over groups, yielding `(name, &[u32])` pairs.
+    ///
+    /// # Safety note
+    /// This performs a raw byte reinterpretation via `cast_slice::<u32>()`.
+    /// If the on-disk group dtype is **not** `uint32` (e.g. `int64`), the
+    /// returned slice will contain mangled values. Prefer
+    /// [`group_entries_owned`] which handles dtype conversion correctly.
     pub fn iter_groups(&self) -> impl Iterator<Item = (&str, &[u32])> + '_ {
         self.groups
             .iter()
@@ -359,8 +377,9 @@ impl<P: TrxScalar> TrxFile<P> {
     }
 
     pub fn group_entries_owned(&self) -> Vec<(String, Vec<u32>)> {
-        self.iter_groups()
-            .map(|(name, members)| (name.to_string(), members.to_vec()))
+        self.groups
+            .iter()
+            .map(|(name, arr)| (name.clone(), arr.to_u32_vec()))
             .collect()
     }
 

@@ -125,12 +125,7 @@ pub fn sample_catmull_rom_into(
 
 // ─── internal helpers ────────────────────────────────────────────────────────
 
-fn tessellate_segment(
-    points: &[[f32; 3]],
-    kept: &[usize],
-    seg: usize,
-    out: &mut Vec<[f32; 3]>,
-) {
+fn tessellate_segment(points: &[[f32; 3]], kept: &[usize], seg: usize, out: &mut Vec<[f32; 3]>) {
     out.clear();
     let cps = segment_control_points(points, kept, seg);
     let knots = centripetal_knots(cps);
@@ -183,11 +178,7 @@ fn segment_control_points_from_dense(cps: &[[f32; 3]], seg: usize) -> [[f32; 3];
 /// Reflect `b` across `a`: returns `a + (a - b) = 2a - b`.
 #[inline]
 fn reflect(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
-    [
-        2.0 * a[0] - b[0],
-        2.0 * a[1] - b[1],
-        2.0 * a[2] - b[2],
-    ]
+    [2.0 * a[0] - b[0], 2.0 * a[1] - b[1], 2.0 * a[2] - b[2]]
 }
 
 /// Centripetal Catmull-Rom (α = 0.5).

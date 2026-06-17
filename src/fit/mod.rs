@@ -36,8 +36,8 @@ mod catmull_rom;
 mod tractogram;
 
 pub use catmull_rom::{
-    fit_catmull_rom_indices, sample_catmull_rom, sample_catmull_rom_into,
-    simplify_streamline, MIN_KEPT_POINTS,
+    fit_catmull_rom_indices, sample_catmull_rom, sample_catmull_rom_into, simplify_streamline,
+    MIN_KEPT_POINTS,
 };
 pub use tractogram::{
     simplify_tractogram, FittedMarker, SimplifyOptions, SimplifyStats, FITTED_MARKER_KEY,

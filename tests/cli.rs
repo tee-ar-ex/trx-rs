@@ -471,11 +471,18 @@ fn transform_with_txt_affine_round_trips() {
     assert_eq!(in_loaded.positions().len(), out_loaded.positions().len());
     // The transform is a non-trivial affine, so output positions should differ.
     let mut differs = false;
-    for (a, b) in in_loaded.positions().iter().zip(out_loaded.positions().iter()) {
+    for (a, b) in in_loaded
+        .positions()
+        .iter()
+        .zip(out_loaded.positions().iter())
+    {
         if (a[0] - b[0]).abs() + (a[1] - b[1]).abs() + (a[2] - b[2]).abs() > 1e-3 {
             differs = true;
             break;
         }
     }
-    assert!(differs, "positions should differ after a non-identity affine");
+    assert!(
+        differs,
+        "positions should differ after a non-identity affine"
+    );
 }
