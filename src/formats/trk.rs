@@ -19,16 +19,16 @@ const MAX_NAMED_PROPERTIES_PER_STREAMLINE: usize = 10;
 
 pub fn read_trk(path: &Path, _header_override: Option<Header>) -> Result<Tractogram> {
     let parsed = parse_trk(path)?;
-    if !parsed.dpv.is_empty() || !parsed.dps.is_empty() {
-        return Err(TrxError::Format(
-            "this .trk file contains TrackVis scalars/properties; convert it to .trx first to preserve metadata"
-                .into(),
-        ));
-    }
 
     let mut tractogram = Tractogram::with_header(parsed.header);
     for streamline in parsed.streamlines {
         tractogram.push_streamline(&streamline)?;
+    }
+    for (name, array) in parsed.dpv {
+        tractogram.insert_dpv(name, array);
+    }
+    for (name, array) in parsed.dps {
+        tractogram.insert_dps(name, array);
     }
     Ok(tractogram)
 }

@@ -21,7 +21,7 @@ pub mod transform;
 pub mod trx_file;
 pub mod typed_view;
 pub mod vertex;
-
+pub mod legacy_io;
 // Re-exports for convenience
 pub use any_trx_file::{AnyTrxFile, PositionsRef};
 pub use dtype::{DType, TrxScalar};
