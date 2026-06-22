@@ -131,6 +131,10 @@ impl Tractogram {
         self.header.dimensions = dimensions;
     }
 
+    pub fn set_header(&mut self, header: Header) {
+        self.header = header;
+    }
+
     pub fn extra(&self) -> &HashMap<String, serde_json::Value> {
         &self.header.extra
     }
