@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["append_dpg_to_zip","append_dps_to_zip","append_dpv_to_zip","append_groups_to_zip","delete_dpg_from_zip","delete_dps_from_zip","delete_dpv_from_zip","delete_groups_from_zip","load_from_zip","save_to_zip","save_to_zip_with"]};

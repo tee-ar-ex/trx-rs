@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["TypedView2D","TypedView2DMut"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["DataArray","DataArrayInfo","StreamlineIter","TrxFile"],"type":["DataPerGroup"]};

@@ -12,6 +12,7 @@ use crate::tractogram::Tractogram;
 
 const TCK_MAGIC: &str = "mrtrix tracks";
 
+/// Read an MRtrix `.tck` or `.tck.gz` file into a [`Tractogram`].
 pub fn read_tck(path: &Path, header_override: Option<Header>) -> Result<Tractogram> {
     let bytes = read_maybe_gzip(path)?;
     let parsed = parse_tck_bytes(&bytes)?;
@@ -31,6 +32,7 @@ pub fn read_tck(path: &Path, header_override: Option<Header>) -> Result<Tractogr
     Ok(tractogram)
 }
 
+/// Write a [`Tractogram`] to `.tck` or `.tck.gz` format.
 pub fn write_tck(path: &Path, tractogram: &Tractogram) -> Result<()> {
     let bytes = build_tck_bytes(tractogram);
     if path

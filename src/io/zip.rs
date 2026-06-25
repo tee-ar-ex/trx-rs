@@ -153,6 +153,7 @@ pub fn save_to_zip_with<P: TrxScalar>(
     Ok(())
 }
 
+/// Append DPS arrays to a TRX zip archive, optionally overwriting existing entries.
 pub fn append_dps_to_zip(
     path: &Path,
     dps: &HashMap<String, DataArray>,
@@ -178,6 +179,7 @@ pub fn append_dps_to_zip(
     archive_edit::apply_archive_ops(path, ops)
 }
 
+/// Append DPV arrays to a TRX zip archive, optionally overwriting existing entries.
 pub fn append_dpv_to_zip(
     path: &Path,
     dpv: &HashMap<String, DataArray>,
@@ -203,6 +205,7 @@ pub fn append_dpv_to_zip(
     archive_edit::apply_archive_ops(path, ops)
 }
 
+/// Append group membership arrays to a TRX zip archive, optionally overwriting existing entries.
 pub fn append_groups_to_zip(
     path: &Path,
     groups: &HashMap<String, Vec<u32>>,
@@ -228,6 +231,7 @@ pub fn append_groups_to_zip(
     archive_edit::apply_archive_ops(path, ops)
 }
 
+/// Append DPG (data-per-group) entries to a TRX zip archive, optionally overwriting existing entries.
 pub fn append_dpg_to_zip(
     path: &Path,
     dpg: &DataPerGroup,
@@ -260,6 +264,7 @@ pub fn append_dpg_to_zip(
     archive_edit::apply_archive_ops(path, ops)
 }
 
+/// Delete named DPS arrays from a TRX zip archive.
 pub fn delete_dps_from_zip(path: &Path, names: &[&str]) -> Result<()> {
     let index = build_archive_index(path)?;
     let mut ops = Vec::new();
@@ -273,6 +278,7 @@ pub fn delete_dps_from_zip(path: &Path, names: &[&str]) -> Result<()> {
     archive_edit::apply_archive_ops(path, ops)
 }
 
+/// Delete named DPV arrays from a TRX zip archive.
 pub fn delete_dpv_from_zip(path: &Path, names: &[&str]) -> Result<()> {
     let index = build_archive_index(path)?;
     let mut ops = Vec::new();
@@ -286,6 +292,7 @@ pub fn delete_dpv_from_zip(path: &Path, names: &[&str]) -> Result<()> {
     archive_edit::apply_archive_ops(path, ops)
 }
 
+/// Delete named groups (and their DPG entries) from a TRX zip archive.
 pub fn delete_groups_from_zip(path: &Path, names: &[&str]) -> Result<()> {
     let index = build_archive_index(path)?;
     let mut ops = Vec::new();
@@ -302,6 +309,10 @@ pub fn delete_groups_from_zip(path: &Path, names: &[&str]) -> Result<()> {
     archive_edit::apply_archive_ops(path, ops)
 }
 
+/// Delete DPG entries for a specific group from a TRX zip archive.
+///
+/// When `names` is `None` or empty, the entire DPG prefix for the group is removed.
+/// When `names` lists specific fields, only those entries are deleted.
 pub fn delete_dpg_from_zip(path: &Path, group: &str, names: Option<&[&str]>) -> Result<()> {
     let index = build_archive_index(path)?;
     let mut ops = Vec::new();

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["Format"],"fn":["convert","detect_format","read_tractogram","write_tractogram"],"mod":["tck","trk","tt","vtk"],"struct":["ConversionOptions"]};

@@ -1,0 +1,38 @@
+name: Docs
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Build Rust API docs
+        run: cargo doc --no-deps --target-dir target/rustdoc
+
+      - name: Install Sphinx dependencies
+        run: pip install -r docs/requirements.txt
+
+      - name: Build Sphinx docs
+        run: sphinx-build docs/ _build/docs
+
+      - name: Embed cargo doc output
+        run: |
+          mkdir -p _build/docs/api/rust
+          cp -r target/rustdoc/doc/* _build/docs/api/rust/
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          publish_dir: _build/docs
+          github_token: ${{ secrets.GITHUB_TOKEN }}

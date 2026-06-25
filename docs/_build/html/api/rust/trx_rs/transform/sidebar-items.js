@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["apply_transform","apply_transform_in_place"]};

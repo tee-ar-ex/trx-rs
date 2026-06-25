@@ -11,12 +11,21 @@ use crate::error::{Result, TrxError};
 use crate::mmap_backing::MmapBacking;
 use crate::trx_file::{DataArray, DataArrayInfo, FromF32, TrxFile, TrxParts};
 
+/// Options that control how TRX files are concatenated.
 #[derive(Clone, Debug, Default)]
 pub struct ConcatenateOptions {
+    /// If true, drop all DPV arrays from the output.
     pub delete_dpv: bool,
+    /// If true, drop all DPS arrays from the output.
     pub delete_dps: bool,
+    /// If true, drop all group arrays from the output.
     pub delete_groups: bool,
+    /// Override the positions dtype in the output (default: f32).
     pub positions_dtype: Option<DType>,
+    /// Per-input group name prefix/suffix rules.
+    ///
+    /// Each element corresponds to one input in order. A `None` entry leaves
+    /// group names unchanged; `Some(name)` prefixes them with that name.
     pub input_group_names: Vec<Option<String>>,
 }
 

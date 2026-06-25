@@ -1,0 +1,148 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/transform.rs`."><title>transform.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-ca0dd0c4.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="trx_rs" data-themes="" data-resource-suffix="" data-rustdoc-version="1.92.0 (ded5c06cf 2025-12-08)" data-channel="1.92.0" data-search-js="search-d69d8955.js" data-stringdex-js="stringdex-c3e638e9.js" data-settings-js="settings-c38705f0.js" ><script src="../../static.files/storage-e2aeef58.js"></script><script defer src="../../static.files/src-script-813739b1.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-ce535bd0.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">trx_rs/</div>transform.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="doccomment">//! Apply spatial transforms to streamline coordinates.
+<a href=#2 id=2 data-nosnippet>2</a>//!
+<a href=#3 id=3 data-nosnippet>3</a>//! Streamlines are stored as a single contiguous `Vec&lt;[f32; 3]&gt;` of
+<a href=#4 id=4 data-nosnippet>4</a>//! vertices in RAS+ mm. Spatially transforming them is a pointwise
+<a href=#5 id=5 data-nosnippet>5</a>//! operation: for each vertex `p`, compute `chain.map_point(p)` and
+<a href=#6 id=6 data-nosnippet>6</a>//! overwrite. There is no notion of "pull"-style resampling — streamlines
+<a href=#7 id=7 data-nosnippet>7</a>//! aren't a sampled image, they're a list of mm coordinates — so the
+<a href=#8 id=8 data-nosnippet>8</a>//! transform's chain must map *source-coords → target-coords* (i.e., the
+<a href=#9 id=9 data-nosnippet>9</a>//! direction the points are moving). For ANTs paired h5s in BIDS naming,
+<a href=#10 id=10 data-nosnippet>10</a>//! that means the *inverse-named* file: e.g. to warp streamlines
+<a href=#11 id=11 data-nosnippet>11</a>//! ACPC → MNI, pass `from-MNI_to-ACPC.h5`.
+<a href=#12 id=12 data-nosnippet>12</a>//!
+<a href=#13 id=13 data-nosnippet>13</a>//! Use [`apply_transform_in_place`] to mutate a [`Tractogram`] in situ,
+<a href=#14 id=14 data-nosnippet>14</a>//! or [`apply_transform`] for the consuming variant. With the `parallel`
+<a href=#15 id=15 data-nosnippet>15</a>//! crate feature enabled (default), the per-point loop is rayon-parallel
+<a href=#16 id=16 data-nosnippet>16</a>//! across streamline vertices.
+<a href=#17 id=17 data-nosnippet>17</a>
+<a href=#18 id=18 data-nosnippet>18</a></span><span class="kw">use </span>itk_transforms_rs::TransformChain;
+<a href=#19 id=19 data-nosnippet>19</a>
+<a href=#20 id=20 data-nosnippet>20</a><span class="kw">use </span><span class="kw">crate</span>::tractogram::Tractogram;
+<a href=#21 id=21 data-nosnippet>21</a>
+<a href=#22 id=22 data-nosnippet>22</a><span class="doccomment">/// Apply `chain` to every vertex of `tractogram` in place.
+<a href=#23 id=23 data-nosnippet>23</a>///
+<a href=#24 id=24 data-nosnippet>24</a>/// Streamline boundaries, DPS, DPV, DPG, and groups are preserved
+<a href=#25 id=25 data-nosnippet>25</a>/// unchanged — only `positions` is mutated.
+<a href=#26 id=26 data-nosnippet>26</a></span><span class="kw">pub fn </span>apply_transform_in_place(tractogram: <span class="kw-2">&amp;mut </span>Tractogram, chain: <span class="kw-2">&amp;</span>TransformChain) {
+<a href=#27 id=27 data-nosnippet>27</a>    <span class="kw">let </span>positions = tractogram.positions_mut();
+<a href=#28 id=28 data-nosnippet>28</a>    map_positions(positions, chain);
+<a href=#29 id=29 data-nosnippet>29</a>}
+<a href=#30 id=30 data-nosnippet>30</a>
+<a href=#31 id=31 data-nosnippet>31</a><span class="doccomment">/// Consuming variant of [`apply_transform_in_place`]. Returns the
+<a href=#32 id=32 data-nosnippet>32</a>/// transformed [`Tractogram`].
+<a href=#33 id=33 data-nosnippet>33</a></span><span class="kw">pub fn </span>apply_transform(<span class="kw-2">mut </span>tractogram: Tractogram, chain: <span class="kw-2">&amp;</span>TransformChain) -&gt; Tractogram {
+<a href=#34 id=34 data-nosnippet>34</a>    apply_transform_in_place(<span class="kw-2">&amp;mut </span>tractogram, chain);
+<a href=#35 id=35 data-nosnippet>35</a>    tractogram
+<a href=#36 id=36 data-nosnippet>36</a>}
+<a href=#37 id=37 data-nosnippet>37</a>
+<a href=#38 id=38 data-nosnippet>38</a><span class="attr">#[inline]
+<a href=#39 id=39 data-nosnippet>39</a></span><span class="kw">fn </span>map_one(p: <span class="kw-2">&amp;mut </span>[f32; <span class="number">3</span>], chain: <span class="kw-2">&amp;</span>TransformChain) {
+<a href=#40 id=40 data-nosnippet>40</a>    <span class="kw">let </span>q = chain.map_point([p[<span class="number">0</span>] <span class="kw">as </span>f64, p[<span class="number">1</span>] <span class="kw">as </span>f64, p[<span class="number">2</span>] <span class="kw">as </span>f64]);
+<a href=#41 id=41 data-nosnippet>41</a>    <span class="kw-2">*</span>p = [q[<span class="number">0</span>] <span class="kw">as </span>f32, q[<span class="number">1</span>] <span class="kw">as </span>f32, q[<span class="number">2</span>] <span class="kw">as </span>f32];
+<a href=#42 id=42 data-nosnippet>42</a>}
+<a href=#43 id=43 data-nosnippet>43</a>
+<a href=#44 id=44 data-nosnippet>44</a><span class="attr">#[cfg(feature = <span class="string">"parallel"</span>)]
+<a href=#45 id=45 data-nosnippet>45</a></span><span class="kw">fn </span>map_positions(positions: <span class="kw-2">&amp;mut </span>[[f32; <span class="number">3</span>]], chain: <span class="kw-2">&amp;</span>TransformChain) {
+<a href=#46 id=46 data-nosnippet>46</a>    <span class="kw">use </span>rayon::prelude::<span class="kw-2">*</span>;
+<a href=#47 id=47 data-nosnippet>47</a>    positions.par_iter_mut().for_each(|p| map_one(p, chain));
+<a href=#48 id=48 data-nosnippet>48</a>}
+<a href=#49 id=49 data-nosnippet>49</a>
+<a href=#50 id=50 data-nosnippet>50</a><span class="attr">#[cfg(not(feature = <span class="string">"parallel"</span>))]
+<a href=#51 id=51 data-nosnippet>51</a></span><span class="kw">fn </span>map_positions(positions: <span class="kw-2">&amp;mut </span>[[f32; <span class="number">3</span>]], chain: <span class="kw-2">&amp;</span>TransformChain) {
+<a href=#52 id=52 data-nosnippet>52</a>    <span class="kw">for </span>p <span class="kw">in </span>positions.iter_mut() {
+<a href=#53 id=53 data-nosnippet>53</a>        map_one(p, chain);
+<a href=#54 id=54 data-nosnippet>54</a>    }
+<a href=#55 id=55 data-nosnippet>55</a>}
+<a href=#56 id=56 data-nosnippet>56</a>
+<a href=#57 id=57 data-nosnippet>57</a><span class="attr">#[cfg(test)]
+<a href=#58 id=58 data-nosnippet>58</a></span><span class="kw">mod </span>tests {
+<a href=#59 id=59 data-nosnippet>59</a>    <span class="kw">use super</span>::<span class="kw-2">*</span>;
+<a href=#60 id=60 data-nosnippet>60</a>    <span class="kw">use </span>itk_transforms_rs::{Affine3, TransformChain};
+<a href=#61 id=61 data-nosnippet>61</a>    <span class="kw">use </span>nalgebra::Matrix4;
+<a href=#62 id=62 data-nosnippet>62</a>
+<a href=#63 id=63 data-nosnippet>63</a>    <span class="kw">use </span><span class="kw">crate</span>::header::Header;
+<a href=#64 id=64 data-nosnippet>64</a>    <span class="kw">use </span><span class="kw">crate</span>::tractogram::Tractogram;
+<a href=#65 id=65 data-nosnippet>65</a>
+<a href=#66 id=66 data-nosnippet>66</a>    <span class="kw">fn </span>one_streamline(points: Vec&lt;[f32; <span class="number">3</span>]&gt;) -&gt; Tractogram {
+<a href=#67 id=67 data-nosnippet>67</a>        <span class="kw">let </span><span class="kw-2">mut </span>t = Tractogram::with_header(Header {
+<a href=#68 id=68 data-nosnippet>68</a>            voxel_to_rasmm: Header::identity_affine(),
+<a href=#69 id=69 data-nosnippet>69</a>            dimensions: [<span class="number">10</span>, <span class="number">10</span>, <span class="number">10</span>],
+<a href=#70 id=70 data-nosnippet>70</a>            nb_streamlines: <span class="number">0</span>,
+<a href=#71 id=71 data-nosnippet>71</a>            nb_vertices: <span class="number">0</span>,
+<a href=#72 id=72 data-nosnippet>72</a>            extra: Default::default(),
+<a href=#73 id=73 data-nosnippet>73</a>        });
+<a href=#74 id=74 data-nosnippet>74</a>        t.push_streamline(<span class="kw-2">&amp;</span>points).unwrap();
+<a href=#75 id=75 data-nosnippet>75</a>        t
+<a href=#76 id=76 data-nosnippet>76</a>    }
+<a href=#77 id=77 data-nosnippet>77</a>
+<a href=#78 id=78 data-nosnippet>78</a>    <span class="attr">#[test]
+<a href=#79 id=79 data-nosnippet>79</a>    </span><span class="kw">fn </span>identity_chain_is_noop() {
+<a href=#80 id=80 data-nosnippet>80</a>        <span class="kw">let </span>pts = <span class="macro">vec!</span>[[<span class="number">1.0_f32</span>, <span class="number">2.0</span>, <span class="number">3.0</span>], [<span class="number">4.0</span>, <span class="number">5.0</span>, <span class="number">6.0</span>]];
+<a href=#81 id=81 data-nosnippet>81</a>        <span class="kw">let </span><span class="kw-2">mut </span>t = one_streamline(pts.clone());
+<a href=#82 id=82 data-nosnippet>82</a>        <span class="kw">let </span><span class="kw-2">mut </span>chain = TransformChain::new();
+<a href=#83 id=83 data-nosnippet>83</a>        chain.push_affine(Affine3::identity());
+<a href=#84 id=84 data-nosnippet>84</a>        apply_transform_in_place(<span class="kw-2">&amp;mut </span>t, <span class="kw-2">&amp;</span>chain);
+<a href=#85 id=85 data-nosnippet>85</a>        <span class="kw">for </span>(a, b) <span class="kw">in </span>t.positions().iter().zip(pts.iter()) {
+<a href=#86 id=86 data-nosnippet>86</a>            <span class="macro">assert_eq!</span>(a, b);
+<a href=#87 id=87 data-nosnippet>87</a>        }
+<a href=#88 id=88 data-nosnippet>88</a>    }
+<a href=#89 id=89 data-nosnippet>89</a>
+<a href=#90 id=90 data-nosnippet>90</a>    <span class="attr">#[test]
+<a href=#91 id=91 data-nosnippet>91</a>    </span><span class="kw">fn </span>translation_shifts_every_point() {
+<a href=#92 id=92 data-nosnippet>92</a>        <span class="kw">let </span>pts = <span class="macro">vec!</span>[[<span class="number">0.0_f32</span>, <span class="number">0.0</span>, <span class="number">0.0</span>], [<span class="number">1.0</span>, <span class="number">2.0</span>, <span class="number">3.0</span>]];
+<a href=#93 id=93 data-nosnippet>93</a>        <span class="kw">let </span><span class="kw-2">mut </span>t = one_streamline(pts);
+<a href=#94 id=94 data-nosnippet>94</a>
+<a href=#95 id=95 data-nosnippet>95</a>        <span class="kw">let </span><span class="kw-2">mut </span>m = Matrix4::identity();
+<a href=#96 id=96 data-nosnippet>96</a>        m[(<span class="number">0</span>, <span class="number">3</span>)] = <span class="number">10.0</span>;
+<a href=#97 id=97 data-nosnippet>97</a>        m[(<span class="number">1</span>, <span class="number">3</span>)] = -<span class="number">5.0</span>;
+<a href=#98 id=98 data-nosnippet>98</a>        m[(<span class="number">2</span>, <span class="number">3</span>)] = <span class="number">100.0</span>;
+<a href=#99 id=99 data-nosnippet>99</a>        <span class="kw">let </span><span class="kw-2">mut </span>chain = TransformChain::new();
+<a href=#100 id=100 data-nosnippet>100</a>        chain.push_affine(Affine3::from_matrix(m));
+<a href=#101 id=101 data-nosnippet>101</a>
+<a href=#102 id=102 data-nosnippet>102</a>        apply_transform_in_place(<span class="kw-2">&amp;mut </span>t, <span class="kw-2">&amp;</span>chain);
+<a href=#103 id=103 data-nosnippet>103</a>        <span class="kw">let </span>p0 = t.positions()[<span class="number">0</span>];
+<a href=#104 id=104 data-nosnippet>104</a>        <span class="kw">let </span>p1 = t.positions()[<span class="number">1</span>];
+<a href=#105 id=105 data-nosnippet>105</a>        <span class="macro">assert!</span>((p0[<span class="number">0</span>] - <span class="number">10.0</span>).abs() &lt; <span class="number">1e-6</span>);
+<a href=#106 id=106 data-nosnippet>106</a>        <span class="macro">assert!</span>((p0[<span class="number">1</span>] + <span class="number">5.0</span>).abs() &lt; <span class="number">1e-6</span>);
+<a href=#107 id=107 data-nosnippet>107</a>        <span class="macro">assert!</span>((p0[<span class="number">2</span>] - <span class="number">100.0</span>).abs() &lt; <span class="number">1e-6</span>);
+<a href=#108 id=108 data-nosnippet>108</a>        <span class="macro">assert!</span>((p1[<span class="number">0</span>] - <span class="number">11.0</span>).abs() &lt; <span class="number">1e-6</span>);
+<a href=#109 id=109 data-nosnippet>109</a>        <span class="macro">assert!</span>((p1[<span class="number">1</span>] + <span class="number">3.0</span>).abs() &lt; <span class="number">1e-6</span>);
+<a href=#110 id=110 data-nosnippet>110</a>        <span class="macro">assert!</span>((p1[<span class="number">2</span>] - <span class="number">103.0</span>).abs() &lt; <span class="number">1e-6</span>);
+<a href=#111 id=111 data-nosnippet>111</a>    }
+<a href=#112 id=112 data-nosnippet>112</a>
+<a href=#113 id=113 data-nosnippet>113</a>    <span class="attr">#[test]
+<a href=#114 id=114 data-nosnippet>114</a>    </span><span class="kw">fn </span>rotation_z_90_maps_x_to_y() {
+<a href=#115 id=115 data-nosnippet>115</a>        <span class="comment">// Rz(90°) sends +x → +y, +y → -x. Matrix in RAS+:
+<a href=#116 id=116 data-nosnippet>116</a>        </span><span class="kw">let </span>theta = std::f64::consts::FRAC_PI_2;
+<a href=#117 id=117 data-nosnippet>117</a>        <span class="kw">let </span>(s, c) = (theta.sin(), theta.cos());
+<a href=#118 id=118 data-nosnippet>118</a>        <span class="kw">let </span><span class="kw-2">mut </span>m = Matrix4::identity();
+<a href=#119 id=119 data-nosnippet>119</a>        m[(<span class="number">0</span>, <span class="number">0</span>)] = c;
+<a href=#120 id=120 data-nosnippet>120</a>        m[(<span class="number">0</span>, <span class="number">1</span>)] = -s;
+<a href=#121 id=121 data-nosnippet>121</a>        m[(<span class="number">1</span>, <span class="number">0</span>)] = s;
+<a href=#122 id=122 data-nosnippet>122</a>        m[(<span class="number">1</span>, <span class="number">1</span>)] = c;
+<a href=#123 id=123 data-nosnippet>123</a>        <span class="kw">let </span><span class="kw-2">mut </span>chain = TransformChain::new();
+<a href=#124 id=124 data-nosnippet>124</a>        chain.push_affine(Affine3::from_matrix(m));
+<a href=#125 id=125 data-nosnippet>125</a>
+<a href=#126 id=126 data-nosnippet>126</a>        <span class="kw">let </span>pts = <span class="macro">vec!</span>[[<span class="number">1.0_f32</span>, <span class="number">0.0</span>, <span class="number">0.0</span>], [<span class="number">0.0</span>, <span class="number">1.0</span>, <span class="number">0.0</span>]];
+<a href=#127 id=127 data-nosnippet>127</a>        <span class="kw">let </span><span class="kw-2">mut </span>t = one_streamline(pts);
+<a href=#128 id=128 data-nosnippet>128</a>        apply_transform_in_place(<span class="kw-2">&amp;mut </span>t, <span class="kw-2">&amp;</span>chain);
+<a href=#129 id=129 data-nosnippet>129</a>
+<a href=#130 id=130 data-nosnippet>130</a>        <span class="kw">let </span>p0 = t.positions()[<span class="number">0</span>];
+<a href=#131 id=131 data-nosnippet>131</a>        <span class="kw">let </span>p1 = t.positions()[<span class="number">1</span>];
+<a href=#132 id=132 data-nosnippet>132</a>        <span class="macro">assert!</span>(p0[<span class="number">0</span>].abs() &lt; <span class="number">1e-6 </span>&amp;&amp; (p0[<span class="number">1</span>] - <span class="number">1.0</span>).abs() &lt; <span class="number">1e-6 </span>&amp;&amp; p0[<span class="number">2</span>].abs() &lt; <span class="number">1e-6</span>);
+<a href=#133 id=133 data-nosnippet>133</a>        <span class="macro">assert!</span>((p1[<span class="number">0</span>] + <span class="number">1.0</span>).abs() &lt; <span class="number">1e-6 </span>&amp;&amp; p1[<span class="number">1</span>].abs() &lt; <span class="number">1e-6 </span>&amp;&amp; p1[<span class="number">2</span>].abs() &lt; <span class="number">1e-6</span>);
+<a href=#134 id=134 data-nosnippet>134</a>    }
+<a href=#135 id=135 data-nosnippet>135</a>
+<a href=#136 id=136 data-nosnippet>136</a>    <span class="attr">#[test]
+<a href=#137 id=137 data-nosnippet>137</a>    </span><span class="kw">fn </span>streamline_count_and_offsets_unchanged() {
+<a href=#138 id=138 data-nosnippet>138</a>        <span class="kw">let </span>pts = <span class="macro">vec!</span>[[<span class="number">1.0_f32</span>, <span class="number">0.0</span>, <span class="number">0.0</span>]; <span class="number">17</span>];
+<a href=#139 id=139 data-nosnippet>139</a>        <span class="kw">let </span><span class="kw-2">mut </span>t = one_streamline(pts);
+<a href=#140 id=140 data-nosnippet>140</a>        <span class="kw">let </span>n_before = t.positions().len();
+<a href=#141 id=141 data-nosnippet>141</a>        <span class="kw">let </span>offsets_before = t.offsets().to_vec();
+<a href=#142 id=142 data-nosnippet>142</a>        <span class="kw">let </span><span class="kw-2">mut </span>chain = TransformChain::new();
+<a href=#143 id=143 data-nosnippet>143</a>        chain.push_affine(Affine3::identity());
+<a href=#144 id=144 data-nosnippet>144</a>        apply_transform_in_place(<span class="kw-2">&amp;mut </span>t, <span class="kw-2">&amp;</span>chain);
+<a href=#145 id=145 data-nosnippet>145</a>        <span class="macro">assert_eq!</span>(t.positions().len(), n_before);
+<a href=#146 id=146 data-nosnippet>146</a>        <span class="macro">assert_eq!</span>(t.offsets(), offsets_before.as_slice());
+<a href=#147 id=147 data-nosnippet>147</a>    }
+<a href=#148 id=148 data-nosnippet>148</a>}</code></pre></div></section></main></body></html>

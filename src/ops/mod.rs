@@ -1,3 +1,5 @@
+//! Operations on TRX tractogram data: merge, subset, deduplicate, query, and copy metadata.
+
 pub mod connectivity;
 pub mod copy_metadata;
 pub mod merge;

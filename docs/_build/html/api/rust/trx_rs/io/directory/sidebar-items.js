@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["append_dpg_to_directory","append_dps_to_directory","append_dpv_to_directory","append_groups_to_directory","delete_dpg_from_directory","delete_dps_from_directory","delete_dpv_from_directory","delete_groups_from_directory","load_from_directory","save_to_directory"]};

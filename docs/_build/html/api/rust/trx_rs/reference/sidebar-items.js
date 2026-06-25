@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["header_from_reference"]};

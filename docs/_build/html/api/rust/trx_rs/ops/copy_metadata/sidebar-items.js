@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["copy_metadata","copy_metadata_any_trx"],"struct":["CopyMetadataOptions"]};
