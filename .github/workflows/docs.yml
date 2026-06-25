@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -32,9 +32,26 @@ jobs:
         run: |
           mkdir -p _build/docs/api/rust
           cp -r target/rustdoc/doc/* _build/docs/api/rust/
-
-      - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v4
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
         with:
-          publish_dir: _build/docs
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+          name: ${{ github.event_name == 'pull_request'
+            && format('github-pages-preview-{0}', github.event.number)
+            || 'github-pages' }}
+          path: docs/_build/
+
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
