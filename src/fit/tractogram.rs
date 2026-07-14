@@ -129,7 +129,7 @@ pub fn simplify_tractogram(
     // Map old streamline index → new streamline index (only set for kept).
     let mut remap: Vec<Option<u32>> = vec![None; nb_in];
 
-    for input_idx in 0..nb_in {
+    for (input_idx, remap_slot) in remap.iter_mut().enumerate() {
         if let Some(keep) = &keep_set {
             if !keep.contains(&(input_idx as u32)) {
                 continue;
@@ -144,9 +144,9 @@ pub fn simplify_tractogram(
         output.push_streamline(&simplified)?;
         let cp_count = simplified.len();
         stats.output_vertices += cp_count;
-        new_widths.extend(std::iter::repeat(opts.default_width_mm).take(cp_count));
-        new_tensions.extend(std::iter::repeat(opts.default_tension).take(cp_count));
-        remap[input_idx] = Some(out_idx);
+        new_widths.extend(std::iter::repeat_n(opts.default_width_mm, cp_count));
+        new_tensions.extend(std::iter::repeat_n(opts.default_tension, cp_count));
+        *remap_slot = Some(out_idx);
     }
     stats.output_streamlines = output.nb_streamlines();
 

@@ -152,7 +152,7 @@ pub fn load_vtk(path: &Path) -> Result<Tractogram, Box<dyn std::error::Error>> {
 
     if buffer
         .get(offset..)
-        .map_or(false, |b| b.starts_with(b"OFFSETS"))
+        .is_some_and(|b| b.starts_with(b"OFFSETS"))
     {
         let offsets_header_end = buffer[offset..]
             .iter()
@@ -341,8 +341,8 @@ pub fn load_nifti_header(path: &Path) -> Result<crate::header::Header, Box<dyn s
         for i in 1..=3 {
             dimensions[i - 1] = read_i64(16 + i * 8)? as u64;
         }
-        for i in 0..8 {
-            pixdim[i] = read_f64(80 + i * 8)?;
+        for (i, px) in pixdim.iter_mut().enumerate() {
+            *px = read_f64(80 + i * 8)?;
         }
         qform_code = read_i32(344)?;
         sform_code = read_i32(348)?;
@@ -361,8 +361,8 @@ pub fn load_nifti_header(path: &Path) -> Result<crate::header::Header, Box<dyn s
         for i in 1..=3 {
             dimensions[i - 1] = read_i16(40 + i * 2)? as u64;
         }
-        for i in 0..8 {
-            pixdim[i] = read_f32(76 + i * 4)? as f64;
+        for (i, px) in pixdim.iter_mut().enumerate() {
+            *px = read_f32(76 + i * 4)? as f64;
         }
         qform_code = read_i16(252)? as i32;
         sform_code = read_i16(254)? as i32;
@@ -493,9 +493,9 @@ pub fn write_trk(
     header_bytes[20..24].copy_from_slice(&voxel_sizes[2].to_le_bytes());
 
     let mut offset = 440;
-    for r in 0..4 {
-        for c in 0..4 {
-            let val = vox_to_ras[r][c] as f32;
+    for row in &vox_to_ras {
+        for &elem in row {
+            let val = elem as f32;
             header_bytes[offset..offset + 4].copy_from_slice(&val.to_le_bytes());
             offset += 4;
         }
@@ -530,8 +530,7 @@ pub fn write_trk(
         let n_points = (end - start) as i32;
 
         chunk.extend_from_slice(&n_points.to_le_bytes());
-        for j in start..end {
-            let pt = positions[j];
+        for &pt in &positions[start..end] {
             let p_ras = nalgebra::Point3::new(pt[0], pt[1], pt[2]);
             let p_center = inv_mat.transform_point(&p_ras);
 
