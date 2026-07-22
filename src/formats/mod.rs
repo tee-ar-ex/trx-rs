@@ -100,10 +100,18 @@ pub fn write_tractogram(
                 AnyTrxFile::F64(file) => file.save(path),
             }
         }
-        Format::Trk => Err(TrxError::Format(
-            "TrackVis (.trk/.trk.gz) export is intentionally unsupported; convert to TRX instead"
-                .into(),
-        )),
+        Format::Trk => {
+            let mut tractogram = tractogram.clone();
+            if let Some(header) = &options.header {
+                tractogram.set_spatial_metadata(header.voxel_to_rasmm, header.dimensions);
+            }
+            crate::legacy_io::write_trk(path, &tractogram, None).map_err(|err| {
+                TrxError::Format(format!(
+                    "failed to write TrackVis file {}: {err}",
+                    path.display()
+                ))
+            })
+        }
         Format::Tck => tck::write_tck(path, tractogram),
         Format::Vtk => vtk::write_vtk(path, tractogram),
         Format::TinyTrack => Err(TrxError::Format(

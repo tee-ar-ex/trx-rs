@@ -21,6 +21,10 @@ struct Cli {
 #[derive(Subcommand, Debug)]
 enum Command {
     /// Convert between supported tractogram formats.
+    ///
+    /// Output may be `.trx`, `.tck`, `.vtk`, or `.trk`. TrackVis (`.trk`)
+    /// export needs a spatial affine: it is taken from the input when it
+    /// carries one (TRX/TRK) or from `--reference` otherwise (TCK/VTK).
     Convert {
         input: PathBuf,
         output: PathBuf,
@@ -28,6 +32,10 @@ enum Command {
         positions_dtype: PositionDtype,
         #[arg(long = "vtk-space", value_enum, default_value = "ras")]
         vtk_space: VtkSpaceArg,
+        /// Reference NIfTI/TRX/TRK supplying the spatial header. Required when
+        /// exporting `.trk` from an input that lacks an affine (TCK/VTK).
+        #[arg(short = 'r', long = "reference")]
+        reference: Option<PathBuf>,
     },
     /// Print a concise summary of a tractogram.
     Info {
@@ -301,7 +309,15 @@ fn run(cli: Cli) -> trx_rs::Result<i32> {
             output,
             positions_dtype,
             vtk_space,
-        } => run_convert(&input, &output, positions_dtype.into(), vtk_space.into()).map(ok),
+            reference,
+        } => run_convert(
+            &input,
+            &output,
+            positions_dtype.into(),
+            vtk_space.into(),
+            reference.as_deref(),
+        )
+        .map(ok),
         Command::Info { input, stats } => print_info(&input, stats).map(ok),
         Command::Concatenate {
             inputs,
@@ -433,17 +449,22 @@ fn run_convert(
     output: &Path,
     dtype: DType,
     vtk_coordinate_mode: VtkCoordinateMode,
+    reference: Option<&Path>,
 ) -> trx_rs::Result<()> {
     let input_format = detect_format(input)?;
     let output_format = detect_format(output)?;
+    // A bare TRX→TRX conversion is just a dtype rewrite and needs no reference.
     if input_format == Format::Trx && output_format == Format::Trx {
         return rewrite_trx_dtype(input, output, dtype);
     }
+    // `--reference` supplies the spatial affine for outputs that need one the
+    // input lacks — notably TrackVis (`.trk`) export from TCK/VTK sources.
+    let header = reference.map(header_from_reference).transpose()?;
     convert(
         input,
         output,
         &ConversionOptions {
-            header: None,
+            header,
             trx_positions_dtype: dtype,
             vtk_coordinate_mode,
         },

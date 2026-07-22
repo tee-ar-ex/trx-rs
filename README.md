@@ -203,7 +203,7 @@ trxrs --help
 Available subcommands:
 
 - `trxrs info <input>`
-- `trxrs convert <input> <output> [--positions-dtype f16|f32|f64]`
+- `trxrs convert <input> <output> [--positions-dtype f16|f32|f64] [--reference <nifti|trx>]`
 - `trxrs concatenate <input-a.trx> <input-b.trx> ... --output <output.trx> [--positions-dtype f16|f32|f64]`
 - `trxrs manipulate-dtype <input.trx> <output.trx> [--positions-dtype f16|f32|f64]`
 - `trxrs transform <input.trx> <output.trx> --transform <h5-or-txt>` — apply an ANTs/ITK spatial transform to streamline coordinates (see [Applying ANTs transforms](#applying-ants-transforms-to-tractograms))
@@ -217,6 +217,9 @@ trxrs info bundles.trx
 # Convert gzipped TCK to TRX with float16 positions
 trxrs convert bundles.tck.gz bundles.trx --positions-dtype f16
 
+# Export to TrackVis (.trk); a reference supplies the affine when the input has none
+trxrs convert bundles.tck bundles.trk --reference dwi.nii.gz
+
 # Rewrite an existing TRX with float32 positions
 trxrs manipulate-dtype input.trx output.trx --positions-dtype f32
 
@@ -227,6 +230,7 @@ trxrs concatenate shard1.trx shard2.trx --output merged.trx --positions-dtype f1
 Notes:
 
 - `trx convert` uses the library conversion layer and supports `trx`, `tck`, `tck.gz`, `vtk`, and `tt.gz` input
+- output may be `trx`, `tck`, `vtk`, or `trk`; TrackVis (`.trk`) export needs a spatial affine, taken from the input (TRX/TRK) or from `--reference` (TCK/VTK), and does not carry per-vertex/per-streamline scalars
 - `.tt.gz` is import-only; writing Tiny Track is not implemented
 - `trx concatenate` currently supports TRX inputs and TRX output only
 - offsets are written as `uint32` when every offset fits in `u32`

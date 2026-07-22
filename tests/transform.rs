@@ -24,11 +24,7 @@ fn make_tractogram(streams: &[&[[f32; 3]]]) -> Tractogram {
 
 #[test]
 fn identity_round_trip_all_points() {
-    let pts = [
-        [1.0_f32, 2.0, 3.0],
-        [4.0, 5.0, 6.0],
-        [-7.5, 0.0, 100.25],
-    ];
+    let pts = [[1.0_f32, 2.0, 3.0], [4.0, 5.0, 6.0], [-7.5, 0.0, 100.25]];
     let mut t = make_tractogram(&[&pts]);
     let mut chain = TransformChain::new();
     chain.push_affine(Affine3::identity());
@@ -123,7 +119,7 @@ fn dps_dpv_groups_dpg_survive_full_round_trip() {
         let mut s = TrxStream::<f32>::new(Header::identity_affine(), [10, 10, 10]);
         s.push_streamline(&[[1.0, 0.0, 0.0], [2.0, 0.0, 0.0], [3.0, 0.0, 0.0]]);
         s.push_streamline(&[[10.0, 0.0, 0.0], [11.0, 0.0, 0.0]]);
-        let mut trx = s.finalize();
+        let trx = s.finalize();
         // Inject DPS/DPV via TrxParts. Easiest path: roundtrip through
         // public ops::copy_metadata… but for a self-contained test we
         // build a fresh TrxParts ourselves. Skip — instead, use
@@ -164,16 +160,8 @@ fn dps_dpv_groups_dpg_survive_full_round_trip() {
 
     // Reload and assert DPS/DPV/groups survive verbatim.
     let reloaded = AnyTrxFile::load(&out_path).unwrap();
-    let dps_names: Vec<String> = reloaded
-        .dps_entries()
-        .into_iter()
-        .map(|(n, _)| n)
-        .collect();
-    let dpv_names: Vec<String> = reloaded
-        .dpv_entries()
-        .into_iter()
-        .map(|(n, _)| n)
-        .collect();
+    let dps_names: Vec<String> = reloaded.dps_entries().into_iter().map(|(n, _)| n).collect();
+    let dpv_names: Vec<String> = reloaded.dpv_entries().into_iter().map(|(n, _)| n).collect();
     assert_eq!(
         dps_names,
         vec!["weight".to_string()],

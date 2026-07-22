@@ -15,7 +15,7 @@ tmm = pytest.importorskip("trx.trx_file_memmap")
 
 def _run_rust_cli(repo_root: Path, *args: str) -> None:
     subprocess.run(
-        ["cargo", "run", "--quiet", "--bin", "trx", "--", *args],
+        ["cargo", "run", "--quiet", "--bin", "trxrs", "--", *args],
         cwd=repo_root,
         check=True,
     )

@@ -133,8 +133,7 @@ pub fn save_to_zip_with<P: TrxScalar>(
     zip.start_file(&pos_filename, stored)?;
     zip.write_all(trx.positions_bytes())?;
 
-    // Offsets — written at `offsets_dtype`'s width. Default uint64 matches
-    // the spec's canonical filename and trx-python fixtures.
+    // Offsets — written at `offsets_dtype`'s width.
     let offsets_filename = format!("offsets.{}", offsets_dtype.suffix());
     zip.start_file(&offsets_filename, stored)?;
     let offsets_bytes = offsets_dtype.encode(trx.offsets());

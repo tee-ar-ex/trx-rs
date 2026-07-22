@@ -129,7 +129,7 @@ pub fn simplify_tractogram(
     // Map old streamline index → new streamline index (only set for kept).
     let mut remap: Vec<Option<u32>> = vec![None; nb_in];
 
-    for input_idx in 0..nb_in {
+    for (input_idx, remap_slot) in remap.iter_mut().enumerate() {
         if let Some(keep) = &keep_set {
             if !keep.contains(&(input_idx as u32)) {
                 continue;
@@ -144,9 +144,9 @@ pub fn simplify_tractogram(
         output.push_streamline(&simplified)?;
         let cp_count = simplified.len();
         stats.output_vertices += cp_count;
-        new_widths.extend(std::iter::repeat(opts.default_width_mm).take(cp_count));
-        new_tensions.extend(std::iter::repeat(opts.default_tension).take(cp_count));
-        remap[input_idx] = Some(out_idx);
+        new_widths.extend(std::iter::repeat_n(opts.default_width_mm, cp_count));
+        new_tensions.extend(std::iter::repeat_n(opts.default_tension, cp_count));
+        *remap_slot = Some(out_idx);
     }
     stats.output_streamlines = output.nb_streamlines();
 
@@ -164,12 +164,7 @@ pub fn simplify_tractogram(
         }
         let mut remapped: Vec<u32> = members
             .iter()
-            .filter_map(|&idx| {
-                remap
-                    .get(idx as usize)
-                    .copied()
-                    .flatten()
-            })
+            .filter_map(|&idx| remap.get(idx as usize).copied().flatten())
             .collect();
         if remapped.is_empty() {
             continue;
@@ -185,7 +180,9 @@ pub fn simplify_tractogram(
     let marker = FittedMarker::new(opts.epsilon_mm);
     let json = serde_json::to_value(&marker)
         .map_err(|e| TrxError::Argument(format!("serialise fitted marker: {e}")))?;
-    output.extra_mut().insert(FITTED_MARKER_KEY.to_string(), json);
+    output
+        .extra_mut()
+        .insert(FITTED_MARKER_KEY.to_string(), json);
 
     Ok((output, stats))
 }
@@ -217,22 +214,15 @@ mod tests {
             let pts = dense_streamline(s as f32 * 1.0, vertices);
             t.push_streamline(&pts).unwrap();
         }
-        t.insert_group(
-            "even",
-            (0..streamline_count as u32).step_by(2).collect(),
-        );
-        t.insert_group(
-            "odd",
-            (1..streamline_count as u32).step_by(2).collect(),
-        );
+        t.insert_group("even", (0..streamline_count as u32).step_by(2).collect());
+        t.insert_group("odd", (1..streamline_count as u32).step_by(2).collect());
         t
     }
 
     #[test]
     fn simplify_compresses_and_marks() {
         let input = build_input(4, 100);
-        let (output, stats) =
-            simplify_tractogram(&input, &SimplifyOptions::default()).unwrap();
+        let (output, stats) = simplify_tractogram(&input, &SimplifyOptions::default()).unwrap();
 
         assert_eq!(stats.input_streamlines, 4);
         assert_eq!(stats.output_streamlines, 4);

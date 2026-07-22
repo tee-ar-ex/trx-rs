@@ -326,7 +326,29 @@ fn convert_trk_to_trx_preserves_metadata() {
 }
 
 #[test]
-fn convert_to_trk_is_rejected() {
+fn convert_to_trk_exports_trackvis() {
+    // `standard.trk` carries a real affine, so it round-trips through TRK
+    // export without needing a `--reference`.
+    let input = trk_fixture("standard.trk");
+    let tmp = tempfile::TempDir::new().unwrap();
+    let output = tmp.path().join("roundtrip.trk");
+
+    Command::cargo_bin("trxrs")
+        .unwrap()
+        .args(["convert", input.to_str().unwrap(), output.to_str().unwrap()])
+        .assert()
+        .success();
+
+    let original = read_tractogram(&input, &ConversionOptions::default()).unwrap();
+    let exported = read_tractogram(&output, &ConversionOptions::default()).unwrap();
+    assert_eq!(exported.nb_streamlines(), original.nb_streamlines());
+    assert_eq!(exported.nb_vertices(), original.nb_vertices());
+}
+
+#[test]
+fn convert_to_trk_without_affine_requires_reference() {
+    // `simple.trk` has only an identity affine; exporting it to TRK needs a
+    // reference to supply real spatial metadata.
     let input = trk_fixture("simple.trk");
     let tmp = tempfile::TempDir::new().unwrap();
     let output = tmp.path().join("roundtrip.trk");
@@ -336,9 +358,7 @@ fn convert_to_trk_is_rejected() {
         .args(["convert", input.to_str().unwrap(), output.to_str().unwrap()])
         .assert()
         .failure()
-        .stderr(predicate::str::contains(
-            "TrackVis (.trk/.trk.gz) export is intentionally unsupported",
-        ));
+        .stderr(predicate::str::contains("reference"));
 }
 
 #[test]
@@ -378,11 +398,11 @@ fn transform_help_lists_subcommand() {
         .args(["transform", "--help"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("ITK Composite.h5"))
+        .stdout(predicate::str::contains("Composite.h5"))
         .stdout(predicate::str::contains("--transform"))
         .stdout(predicate::str::contains("--reference"))
         .stdout(predicate::str::contains("--invert"))
-        .stdout(predicate::str::contains("source-coords"));
+        .stdout(predicate::str::contains("from-B_to-A"));
 }
 
 #[test]
@@ -471,11 +491,18 @@ fn transform_with_txt_affine_round_trips() {
     assert_eq!(in_loaded.positions().len(), out_loaded.positions().len());
     // The transform is a non-trivial affine, so output positions should differ.
     let mut differs = false;
-    for (a, b) in in_loaded.positions().iter().zip(out_loaded.positions().iter()) {
+    for (a, b) in in_loaded
+        .positions()
+        .iter()
+        .zip(out_loaded.positions().iter())
+    {
         if (a[0] - b[0]).abs() + (a[1] - b[1]).abs() + (a[2] - b[2]).abs() > 1e-3 {
             differs = true;
             break;
         }
     }
-    assert!(differs, "positions should differ after a non-identity affine");
+    assert!(
+        differs,
+        "positions should differ after a non-identity affine"
+    );
 }

@@ -148,11 +148,23 @@ fn simple_trk_gz_direct_import_matches_expected_geometry() {
 }
 
 #[test]
-fn payload_bearing_trk_direct_import_refuses_to_drop_metadata() {
-    let err = read_tractogram(&fixture("complex.trk"), &ConversionOptions::default()).unwrap_err();
-    assert!(err
-        .to_string()
-        .contains("convert it to .trx first to preserve metadata"));
+fn payload_bearing_trk_direct_import_preserves_metadata() {
+    let tractogram =
+        read_tractogram(&fixture("complex.trk"), &ConversionOptions::default()).unwrap();
+
+    assert_eq!(tractogram.nb_streamlines(), 3);
+    assert_eq!(tractogram.nb_vertices(), 8);
+
+    let mut dpv_names = tractogram.dpv_names().collect::<Vec<_>>();
+    dpv_names.sort();
+    assert_eq!(dpv_names, vec!["colors", "fa"]);
+
+    let mut dps_names = tractogram.dps_names().collect::<Vec<_>>();
+    dps_names.sort();
+    assert_eq!(
+        dps_names,
+        vec!["mean_colors", "mean_curvature", "mean_torsion"]
+    );
 }
 
 #[test]

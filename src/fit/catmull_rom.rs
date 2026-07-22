@@ -52,8 +52,8 @@ pub fn fit_catmull_rom_indices(points: &[[f32; 3]], epsilon_mm: f32) -> Vec<usiz
 
             let mut worst_idx = start + 1;
             let mut worst_d2 = 0.0_f32;
-            for input_idx in (start + 1)..end {
-                let d2 = point_to_polyline_dist2(points[input_idx], &tess_buf);
+            for (input_idx, &point) in points.iter().enumerate().take(end).skip(start + 1) {
+                let d2 = point_to_polyline_dist2(point, &tess_buf);
                 if d2 > worst_d2 {
                     worst_d2 = d2;
                     worst_idx = input_idx;
@@ -125,12 +125,7 @@ pub fn sample_catmull_rom_into(
 
 // ─── internal helpers ────────────────────────────────────────────────────────
 
-fn tessellate_segment(
-    points: &[[f32; 3]],
-    kept: &[usize],
-    seg: usize,
-    out: &mut Vec<[f32; 3]>,
-) {
+fn tessellate_segment(points: &[[f32; 3]], kept: &[usize], seg: usize, out: &mut Vec<[f32; 3]>) {
     out.clear();
     let cps = segment_control_points(points, kept, seg);
     let knots = centripetal_knots(cps);
@@ -183,11 +178,7 @@ fn segment_control_points_from_dense(cps: &[[f32; 3]], seg: usize) -> [[f32; 3];
 /// Reflect `b` across `a`: returns `a + (a - b) = 2a - b`.
 #[inline]
 fn reflect(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
-    [
-        2.0 * a[0] - b[0],
-        2.0 * a[1] - b[1],
-        2.0 * a[2] - b[2],
-    ]
+    [2.0 * a[0] - b[0], 2.0 * a[1] - b[1], 2.0 * a[2] - b[2]]
 }
 
 /// Centripetal Catmull-Rom (α = 0.5).
@@ -296,12 +287,7 @@ fn point_to_segment_dist2(p: [f32; 3], a: [f32; 3], b: [f32; 3]) -> f32 {
     let apx = p[0] - a[0];
     let apy = p[1] - a[1];
     let apz = p[2] - a[2];
-    let mut t = (apx * abx + apy * aby + apz * abz) / denom;
-    if t < 0.0 {
-        t = 0.0;
-    } else if t > 1.0 {
-        t = 1.0;
-    }
+    let t = ((apx * abx + apy * aby + apz * abz) / denom).clamp(0.0, 1.0);
     let dx = apx - abx * t;
     let dy = apy - aby * t;
     let dz = apz - abz * t;

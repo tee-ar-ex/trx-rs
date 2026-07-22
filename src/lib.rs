@@ -12,6 +12,7 @@ pub mod fit;
 pub mod formats;
 pub mod header;
 pub mod io;
+pub mod legacy_io;
 pub mod mmap_backing;
 pub mod ops;
 pub mod reference;
@@ -21,7 +22,6 @@ pub mod transform;
 pub mod trx_file;
 pub mod typed_view;
 pub mod vertex;
-
 // Re-exports for convenience
 pub use any_trx_file::{AnyTrxFile, PositionsRef};
 pub use dtype::{DType, TrxScalar};

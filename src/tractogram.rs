@@ -131,6 +131,10 @@ impl Tractogram {
         self.header.dimensions = dimensions;
     }
 
+    pub fn set_header(&mut self, header: Header) {
+        self.header = header;
+    }
+
     pub fn extra(&self) -> &HashMap<String, serde_json::Value> {
         &self.header.extra
     }
@@ -351,7 +355,7 @@ impl Default for Tractogram {
 fn clone_groups(groups: &HashMap<String, DataArray>) -> HashMap<String, Vec<u32>> {
     groups
         .iter()
-        .map(|(name, arr)| (name.clone(), arr.cast_slice::<u32>().to_vec()))
+        .map(|(name, arr)| (name.clone(), arr.to_u32_vec()))
         .collect()
 }
 
