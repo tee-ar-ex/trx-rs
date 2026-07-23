@@ -26,19 +26,19 @@ jobs:
         run: pip install -r docs/requirements.txt
 
       - name: Build Sphinx docs
-        run: sphinx-build docs/ _build/docs
+        run: sphinx-build docs/ _build/html/
 
       - name: Embed cargo doc output
         run: |
-          mkdir -p _build/docs/api/rust
-          cp -r target/rustdoc/doc/* _build/docs/api/rust/
+          mkdir -p _build/html/api/rust
+          cp -r target/rustdoc/doc/* _build/html/api/rust/
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
           name: ${{ github.event_name == 'pull_request'
             && format('github-pages-preview-{0}', github.event.number)
             || 'github-pages' }}
-          path: docs/_build/
+          path: docs/_build/html/
 
   deploy:
     if: github.event_name != 'pull_request'
