@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"enum":["AnyTrxFile","PositionsRef"],"fn":["detect_positions_dtype"]};

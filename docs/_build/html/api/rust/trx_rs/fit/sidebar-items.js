@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"constant":["FITTED_MARKER_KEY","MIN_KEPT_POINTS"],"fn":["fit_catmull_rom_indices","sample_catmull_rom","sample_catmull_rom_into","simplify_streamline","simplify_tractogram"],"struct":["FittedMarker","SimplifyOptions","SimplifyStats"]};

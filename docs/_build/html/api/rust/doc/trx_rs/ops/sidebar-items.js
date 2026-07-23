@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"mod":["connectivity","copy_metadata","merge","streamline_ops","subset"]};

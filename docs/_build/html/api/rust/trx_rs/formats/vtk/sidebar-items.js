@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"enum":["VtkCoordinateMode","VtkCoordinateSpace"],"fn":["inspect_vtk_declared_space","read_vtk","vtk_import_warnings","write_vtk"]};
