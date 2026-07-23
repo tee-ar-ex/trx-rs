@@ -24,27 +24,26 @@ pub fn read_vtk(
     coordinate_mode: VtkCoordinateMode,
 ) -> Result<Tractogram> {
     let bytes = std::fs::read(path)?;
-    let parsed = parse_vtk_bytes(&bytes, coordinate_mode)?;
+    let (positions, offsets) = parse_vtk_bytes(&bytes, coordinate_mode)?;
 
-    let mut tractogram = Tractogram::with_header(header_override.unwrap_or(Header {
+    let header = header_override.unwrap_or(Header {
         voxel_to_rasmm: Header::identity_affine(),
         dimensions: [1, 1, 1],
         nb_streamlines: 0,
         nb_vertices: 0,
         extra: Default::default(),
-    }));
+    });
 
-    for streamline in parsed {
-        tractogram.push_streamline(&streamline)?;
-    }
-
-    Ok(tractogram)
+    Ok(Tractogram::from_positions_and_offsets(
+        positions, offsets, header,
+    ))
 }
 
 use std::io::Write;
 
 pub fn write_vtk(path: &Path, tractogram: &Tractogram) -> Result<()> {
-    let mut file = std::fs::File::create(path)?;
+    let file = std::fs::File::create(path)?;
+    let mut file = std::io::BufWriter::new(file);
 
     let mut header = String::new();
     header.push_str("# vtk DataFile Version 4.2\n");
@@ -65,7 +64,11 @@ pub fn write_vtk(path: &Path, tractogram: &Tractogram) -> Result<()> {
         .map(|streamline| streamline.len() + 1)
         .sum();
 
-    let lines_header = format!("\nLINES {} {}\n", tractogram.nb_streamlines(), total_line_entries);
+    let lines_header = format!(
+        "\nLINES {} {}\n",
+        tractogram.nb_streamlines(),
+        total_line_entries
+    );
     file.write_all(lines_header.as_bytes())?;
 
     let mut vertex_index = 0u32;
@@ -97,7 +100,10 @@ pub fn vtk_import_warnings(path: &Path, mode: VtkCoordinateMode) -> Result<Vec<S
     })
 }
 
-fn parse_vtk_bytes(bytes: &[u8], coordinate_mode: VtkCoordinateMode) -> Result<Vec<Vec<[f32; 3]>>> {
+fn parse_vtk_bytes(
+    bytes: &[u8],
+    coordinate_mode: VtkCoordinateMode,
+) -> Result<(Vec<[f32; 3]>, Vec<u32>)> {
     let mut cursor = 0usize;
     let version = read_line(bytes, &mut cursor)?;
     if !version.starts_with("# vtk DataFile Version") {
@@ -131,7 +137,7 @@ fn parse_vtk_bytes(bytes: &[u8], coordinate_mode: VtkCoordinateMode) -> Result<V
     let vtk_header_text = header_text(bytes, cursor)?;
 
     let is_binary = format.trim().eq_ignore_ascii_case("BINARY");
-    let points = if is_binary {
+    let (mut positions, offsets) = if is_binary {
         parse_binary_points(bytes, &mut cursor, point_count, point_type)?
     } else if format.trim().eq_ignore_ascii_case("ASCII") {
         parse_ascii_points_and_lines(bytes, cursor, point_count)?
@@ -143,22 +149,18 @@ fn parse_vtk_bytes(bytes: &[u8], coordinate_mode: VtkCoordinateMode) -> Result<V
     };
 
     let coordinate_space = resolve_vtk_coordinate_space(vtk_header_text, coordinate_mode)?;
-    Ok(points
-        .into_iter()
-        .map(|streamline| {
-            streamline
-                .into_iter()
-                .map(|point| vtk_world_to_ras(point, coordinate_space))
-                .collect()
-        })
-        .collect())
+    for point in &mut positions {
+        *point = vtk_world_to_ras(*point, coordinate_space);
+    }
+
+    Ok((positions, offsets))
 }
 
 fn parse_ascii_points_and_lines(
     bytes: &[u8],
     cursor: usize,
     point_count: usize,
-) -> Result<Vec<Vec<[f32; 3]>>> {
+) -> Result<(Vec<[f32; 3]>, Vec<u32>)> {
     let text = std::str::from_utf8(&bytes[cursor..])
         .map_err(|_| TrxError::Format("ASCII VTK body is not valid UTF-8".into()))?;
     let mut tokens = text.split_whitespace();
@@ -195,7 +197,7 @@ fn parse_binary_points(
     cursor: &mut usize,
     point_count: usize,
     point_type: &str,
-) -> Result<Vec<Vec<[f32; 3]>>> {
+) -> Result<(Vec<[f32; 3]>, Vec<u32>)> {
     let element_size = match point_type {
         "float" => 4,
         "double" => 8,
@@ -279,9 +281,12 @@ fn build_streamlines_from_ints(
     points: Vec<[f32; 3]>,
     line_count: usize,
     ints: Vec<i32>,
-) -> Result<Vec<Vec<[f32; 3]>>> {
+) -> Result<(Vec<[f32; 3]>, Vec<u32>)> {
     let mut cursor = 0usize;
-    let mut streamlines = Vec::with_capacity(line_count);
+    let mut positions = Vec::with_capacity(ints.len().saturating_sub(line_count));
+    let mut offsets = Vec::with_capacity(line_count + 1);
+    offsets.push(0);
+
     for _ in 0..line_count {
         let length = *ints
             .get(cursor)
@@ -289,7 +294,6 @@ fn build_streamlines_from_ints(
         cursor += 1;
         let length = usize::try_from(length)
             .map_err(|_| TrxError::Format("VTK streamline length cannot be negative".into()))?;
-        let mut streamline = Vec::with_capacity(length);
         for _ in 0..length {
             let point_index = *ints.get(cursor).ok_or_else(|| {
                 TrxError::Format("VTK LINES point index section ended unexpectedly".into())
@@ -300,24 +304,28 @@ fn build_streamlines_from_ints(
             let point = *points.get(point_index).ok_or_else(|| {
                 TrxError::Format(format!("VTK point index {point_index} is out of bounds"))
             })?;
-            streamline.push(point);
+            positions.push(point);
         }
-        streamlines.push(streamline);
+        offsets.push(u32::try_from(positions.len()).map_err(|_| {
+            TrxError::Argument("tractogram has more than u32::MAX vertices".into())
+        })?);
     }
-    Ok(streamlines)
+    Ok((positions, offsets))
 }
 
 fn build_streamlines_from_tokens<'a>(
     points: Vec<[f32; 3]>,
     line_count: usize,
     tokens: &mut impl Iterator<Item = &'a str>,
-) -> Result<Vec<Vec<[f32; 3]>>> {
-    let mut streamlines = Vec::with_capacity(line_count);
+) -> Result<(Vec<[f32; 3]>, Vec<u32>)> {
+    let mut positions = Vec::new();
+    let mut offsets = Vec::with_capacity(line_count + 1);
+    offsets.push(0);
+
     for _ in 0..line_count {
         let length = next_token(tokens, "streamline length")?
             .parse::<usize>()
             .map_err(|_| TrxError::Format("invalid VTK streamline length".into()))?;
-        let mut streamline = Vec::with_capacity(length);
         for _ in 0..length {
             let point_index = next_token(tokens, "streamline point index")?
                 .parse::<usize>()
@@ -325,11 +333,13 @@ fn build_streamlines_from_tokens<'a>(
             let point = *points.get(point_index).ok_or_else(|| {
                 TrxError::Format(format!("VTK point index {point_index} is out of bounds"))
             })?;
-            streamline.push(point);
+            positions.push(point);
         }
-        streamlines.push(streamline);
+        offsets.push(u32::try_from(positions.len()).map_err(|_| {
+            TrxError::Argument("tractogram has more than u32::MAX vertices".into())
+        })?);
     }
-    Ok(streamlines)
+    Ok((positions, offsets))
 }
 
 fn read_line<'a>(bytes: &'a [u8], cursor: &mut usize) -> Result<&'a str> {

@@ -67,6 +67,25 @@ impl Tractogram {
         }
     }
 
+    /// Create a tractogram directly from positions and offsets without reallocating.
+    pub fn from_positions_and_offsets(
+        positions: Vec<[f32; 3]>,
+        offsets: Vec<u32>,
+        mut header: Header,
+    ) -> Self {
+        header.nb_streamlines = offsets.len().saturating_sub(1) as u64;
+        header.nb_vertices = positions.len() as u64;
+        Self {
+            header,
+            positions,
+            offsets,
+            dps: HashMap::new(),
+            dpv: HashMap::new(),
+            groups: HashMap::new(),
+            dpg: HashMap::new(),
+        }
+    }
+
     /// Build a tractogram by copying streamline geometry from a typed TRX file.
     pub fn from_trx<P: TrxScalar>(trx: &TrxFile<P>) -> Self {
         let positions = trx
