@@ -44,6 +44,21 @@ pub fn load_trk(path: &Path) -> Result<Tractogram, Box<dyn std::error::Error>> {
     }
 
     let mut tr = Tractogram::new();
+
+    let dims = [
+        i16::from_le_bytes(buffer[6..8].try_into().unwrap()) as u64,
+        i16::from_le_bytes(buffer[8..10].try_into().unwrap()) as u64,
+        i16::from_le_bytes(buffer[10..12].try_into().unwrap()) as u64,
+    ];
+
+    let mut vox_to_ras_f64 = [[0.0; 4]; 4];
+    for r in 0..4 {
+        for c in 0..4 {
+            vox_to_ras_f64[r][c] = vox_to_ras[(r, c)] as f64;
+        }
+    }
+    tr.set_spatial_metadata(vox_to_ras_f64, dims);
+
     let mut offset = 1000;
 
     while offset + 4 <= buffer.len() {

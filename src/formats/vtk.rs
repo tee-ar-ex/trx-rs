@@ -41,39 +41,43 @@ pub fn read_vtk(
     Ok(tractogram)
 }
 
+use std::io::Write;
+
 pub fn write_vtk(path: &Path, tractogram: &Tractogram) -> Result<()> {
-    let mut text = String::new();
-    text.push_str("# vtk DataFile Version 4.2\n");
-    text.push_str("trx-rs tractogram SPACE=RAS\n");
-    text.push_str("ASCII\n");
-    text.push_str("DATASET POLYDATA\n");
-    text.push_str(&format!("POINTS {} float\n", tractogram.nb_vertices()));
+    let mut file = std::fs::File::create(path)?;
+
+    let mut header = String::new();
+    header.push_str("# vtk DataFile Version 4.2\n");
+    header.push_str("trx-rs tractogram SPACE=RAS\n");
+    header.push_str("BINARY\n");
+    header.push_str("DATASET POLYDATA\n");
+    header.push_str(&format!("POINTS {} float\n", tractogram.nb_vertices()));
+    file.write_all(header.as_bytes())?;
+
     for point in tractogram.positions() {
-        text.push_str(&format!("{} {} {}\n", point[0], point[1], point[2]));
+        file.write_all(&point[0].to_be_bytes())?;
+        file.write_all(&point[1].to_be_bytes())?;
+        file.write_all(&point[2].to_be_bytes())?;
     }
 
     let total_line_entries: usize = tractogram
         .streamlines()
         .map(|streamline| streamline.len() + 1)
         .sum();
-    text.push_str(&format!(
-        "LINES {} {}\n",
-        tractogram.nb_streamlines(),
-        total_line_entries
-    ));
+
+    let lines_header = format!("\nLINES {} {}\n", tractogram.nb_streamlines(), total_line_entries);
+    file.write_all(lines_header.as_bytes())?;
 
     let mut vertex_index = 0u32;
     for streamline in tractogram.streamlines() {
-        text.push_str(&streamline.len().to_string());
-        for _ in streamline {
-            text.push(' ');
-            text.push_str(&vertex_index.to_string());
+        let len = streamline.len() as u32;
+        file.write_all(&len.to_be_bytes())?;
+        for _ in 0..len {
+            file.write_all(&vertex_index.to_be_bytes())?;
             vertex_index += 1;
         }
-        text.push('\n');
     }
 
-    std::fs::write(path, text)?;
     Ok(())
 }
 
