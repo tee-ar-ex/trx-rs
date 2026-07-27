@@ -23,9 +23,11 @@ html_theme_options = {
     "show_nav_level": 2,
     "navigation_with_keys": True,
     "logo": {
-        "text": "trx-rs",
-    },
-}
+        "image_light": "_static/trx_logo.png",
+        "image_dark": "_static/trx_logo.png",
+        "alt_text": "TRX",
+        "link": "https://tee-ar-ex.github.io",
+    },}
 html_title = "trx-rs"
 
 intersphinx_mapping = {
