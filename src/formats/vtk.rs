@@ -81,6 +81,8 @@ pub fn write_vtk(path: &Path, tractogram: &Tractogram) -> Result<()> {
         }
     }
 
+    file.flush()?;
+
     Ok(())
 }
 
