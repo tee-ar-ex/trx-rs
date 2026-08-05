@@ -77,7 +77,9 @@ fn get_entry_backing(
     if entry.compression() == zip::CompressionMethod::Stored {
         let data_start = entry.data_start() as usize;
         if data_start + size > arc_mmap.len() {
-            return Err(TrxError::Format("zip entry data exceeds archive boundaries".into()));
+            return Err(TrxError::Format(
+                "zip entry data exceeds archive boundaries".into(),
+            ));
         }
         let ptr_val = arc_mmap.as_ptr() as usize + data_start;
         let req = align_requirement.max(1);
@@ -210,21 +212,33 @@ pub fn load_from_zip<P: TrxScalar>(path: &Path) -> Result<TrxFile<P>> {
         if let Some(rest) = name.strip_prefix("dps/") {
             let parsed = TrxFilename::parse(rest)?;
             let backing = get_entry_backing(&arc_mmap, &mut entry, parsed.dtype.size_of())?;
-            dps.insert(parsed.name, DataArray::from_backing(backing, parsed.ncols, parsed.dtype));
+            dps.insert(
+                parsed.name,
+                DataArray::from_backing(backing, parsed.ncols, parsed.dtype),
+            );
         } else if let Some(rest) = name.strip_prefix("dpv/") {
             let parsed = TrxFilename::parse(rest)?;
             let backing = get_entry_backing(&arc_mmap, &mut entry, parsed.dtype.size_of())?;
-            dpv.insert(parsed.name, DataArray::from_backing(backing, parsed.ncols, parsed.dtype));
+            dpv.insert(
+                parsed.name,
+                DataArray::from_backing(backing, parsed.ncols, parsed.dtype),
+            );
         } else if let Some(rest) = name.strip_prefix("groups/") {
             let parsed = TrxFilename::parse(rest)?;
             let backing = get_entry_backing(&arc_mmap, &mut entry, parsed.dtype.size_of())?;
-            groups.insert(parsed.name, DataArray::from_backing(backing, parsed.ncols, parsed.dtype));
+            groups.insert(
+                parsed.name,
+                DataArray::from_backing(backing, parsed.ncols, parsed.dtype),
+            );
         } else if let Some(rest) = name.strip_prefix("dpg/") {
             if let Some((group, file_name)) = rest.split_once('/') {
                 let parsed = TrxFilename::parse(file_name)?;
                 let backing = get_entry_backing(&arc_mmap, &mut entry, parsed.dtype.size_of())?;
                 let group_map = dpg.entry(group.to_string()).or_default();
-                group_map.insert(parsed.name, DataArray::from_backing(backing, parsed.ncols, parsed.dtype));
+                group_map.insert(
+                    parsed.name,
+                    DataArray::from_backing(backing, parsed.ncols, parsed.dtype),
+                );
             }
         } else if name.starts_with("positions.") {
             let pos_parsed = TrxFilename::parse(&name)?;
@@ -241,10 +255,20 @@ pub fn load_from_zip<P: TrxScalar>(path: &Path) -> Result<TrxFile<P>> {
                     pos_parsed.ncols
                 )));
             }
-            positions_backing = Some(get_entry_backing(&arc_mmap, &mut entry, std::mem::align_of::<P>())?);
+            positions_backing = Some(get_entry_backing(
+                &arc_mmap,
+                &mut entry,
+                std::mem::align_of::<P>(),
+            )?);
         } else if name.starts_with("offsets.") {
             let off_parsed = TrxFilename::parse(&name)?;
-            let backing = load_zip_offsets(&arc_mmap, &mut entry, off_parsed.dtype, header.nb_streamlines as usize, header.nb_vertices as usize)?;
+            let backing = load_zip_offsets(
+                &arc_mmap,
+                &mut entry,
+                off_parsed.dtype,
+                header.nb_streamlines as usize,
+                header.nb_vertices as usize,
+            )?;
             offsets_backing = Some(backing);
         }
     }

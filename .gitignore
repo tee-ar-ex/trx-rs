@@ -6,6 +6,10 @@
 /python/.venv
 /python/trxrs/*.so
 /python/trxrs/*.dylib
+*.dSYM
+load_bench.rs
+patch_vtk.py
+patch_write.py
 **/__pycache__
 
 # IDE / editor

@@ -79,9 +79,18 @@ impl DataArray {
     pub fn to_u32_vec(&self) -> Vec<u32> {
         match self.dtype {
             DType::UInt32 => bytemuck::pod_collect_to_vec(self.as_bytes()),
-            DType::Int32 => bytemuck::pod_collect_to_vec::<u8, i32>(self.as_bytes()).into_iter().map(|x| x as u32).collect(),
-            DType::UInt64 => bytemuck::pod_collect_to_vec::<u8, u64>(self.as_bytes()).into_iter().map(|x| x as u32).collect(),
-            DType::Int64 => bytemuck::pod_collect_to_vec::<u8, i64>(self.as_bytes()).into_iter().map(|x| x as u32).collect(),
+            DType::Int32 => bytemuck::pod_collect_to_vec::<u8, i32>(self.as_bytes())
+                .into_iter()
+                .map(|x| x as u32)
+                .collect(),
+            DType::UInt64 => bytemuck::pod_collect_to_vec::<u8, u64>(self.as_bytes())
+                .into_iter()
+                .map(|x| x as u32)
+                .collect(),
+            DType::Int64 => bytemuck::pod_collect_to_vec::<u8, i64>(self.as_bytes())
+                .into_iter()
+                .map(|x| x as u32)
+                .collect(),
             _ => bytemuck::pod_collect_to_vec(self.as_bytes()),
         }
     }
