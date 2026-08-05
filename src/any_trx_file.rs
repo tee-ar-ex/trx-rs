@@ -1,4 +1,5 @@
 use half::f16;
+use std::io::BufReader;
 use std::path::Path;
 
 use crate::dtype::DType;
@@ -277,14 +278,13 @@ fn detect_positions_dtype_dir(dir: &Path) -> Result<DType> {
             return Ok(parsed.dtype);
         }
     }
-    Err(TrxError::Format(
-        "no positions file found in directory".into(),
-    ))
+    Ok(DType::Float16)
 }
 
 fn detect_positions_dtype_zip(path: &Path) -> Result<DType> {
     let file = std::fs::File::open(path)?;
-    let archive = zip::ZipArchive::new(file)?;
+    let reader = BufReader::new(file);
+    let archive = zip::ZipArchive::new(reader)?;
 
     for i in 0..archive.len() {
         let name = archive.name_for_index(i).unwrap_or("");
@@ -294,7 +294,5 @@ fn detect_positions_dtype_zip(path: &Path) -> Result<DType> {
             return Ok(parsed.dtype);
         }
     }
-    Err(TrxError::Format(
-        "no positions file found in zip archive".into(),
-    ))
+    Ok(DType::Float16)
 }

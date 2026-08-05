@@ -63,7 +63,6 @@ impl<P: TrxScalar> TrxStream<P> {
             dpv: Default::default(),
             groups: Default::default(),
             dpg: Default::default(),
-            tempdir: None,
         })
     }
 

@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File, OpenOptions};
-use std::io::{Read, Write};
+use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::Path;
 
 use tempfile::NamedTempFile;
@@ -59,7 +59,8 @@ impl NormalizedOps {
 
 pub(crate) fn archive_entry_names(path: &Path) -> Result<BTreeSet<String>> {
     let file = File::open(path)?;
-    let mut archive = zip::ZipArchive::new(file)?;
+    let reader = BufReader::new(file);
+    let mut archive = zip::ZipArchive::new(reader)?;
     let mut names = BTreeSet::new();
     for index in 0..archive.len() {
         let entry = archive.by_index(index)?;
@@ -70,7 +71,8 @@ pub(crate) fn archive_entry_names(path: &Path) -> Result<BTreeSet<String>> {
 
 pub(crate) fn read_archive_entry(path: &Path, entry_name: &str) -> Result<Vec<u8>> {
     let file = File::open(path)?;
-    let mut archive = zip::ZipArchive::new(file)?;
+    let reader = BufReader::new(file);
+    let mut archive = zip::ZipArchive::new(reader)?;
     let mut entry = archive.by_name(entry_name)?;
     let mut bytes = Vec::new();
     entry.read_to_end(&mut bytes)?;
@@ -156,26 +158,59 @@ fn insert_pending(
     Ok(())
 }
 
+struct BufReadWriter {
+    inner: BufWriter<File>,
+}
+
+impl Read for BufReadWriter {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        self.inner.flush()?;
+        self.inner.get_mut().read(buf)
+    }
+}
+
+impl Write for BufReadWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.inner.write(buf)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.inner.flush()
+    }
+}
+
+impl std::io::Seek for BufReadWriter {
+    fn seek(&mut self, pos: std::io::SeekFrom) -> std::io::Result<u64> {
+        self.inner.seek(pos)
+    }
+}
+
 fn append_fast_path(path: &Path, adds: &BTreeMap<String, PendingEntry>) -> Result<()> {
     let file = OpenOptions::new().read(true).write(true).open(path)?;
-    let mut writer = zip::ZipWriter::new_append(file)?;
+    let buf_rw = BufReadWriter {
+        inner: BufWriter::new(file),
+    };
+    let mut writer = zip::ZipWriter::new_append(buf_rw)?;
     for (entry_path, pending) in adds {
         write_entry(&mut writer, entry_path, pending)?;
     }
-    writer.finish()?;
+    let mut buf_rw = writer.finish()?;
+    buf_rw.flush()?;
     Ok(())
 }
 
 fn rewrite_path(path: &Path, normalized: &NormalizedOps) -> Result<()> {
     let source_file = File::open(path)?;
-    let mut source = zip::ZipArchive::new(source_file)?;
+    let reader = BufReader::new(source_file);
+    let mut source = zip::ZipArchive::new(reader)?;
     let comment = source.comment().to_vec();
     let zip64_comment = source.zip64_comment().map(|bytes| bytes.to_vec());
 
     let parent = path.parent().unwrap_or_else(|| Path::new("."));
     let temp = NamedTempFile::new_in(parent)?;
     let out_file = temp.reopen()?;
-    let mut writer = zip::ZipWriter::new(out_file);
+    let buf_writer = BufWriter::new(out_file);
+    let mut writer = zip::ZipWriter::new(buf_writer);
     writer.set_raw_comment(comment.into_boxed_slice());
     writer.set_raw_zip64_comment(zip64_comment.map(Vec::into_boxed_slice));
 
@@ -195,7 +230,8 @@ fn rewrite_path(path: &Path, normalized: &NormalizedOps) -> Result<()> {
         write_entry(&mut writer, entry_path, pending)?;
     }
 
-    writer.finish()?;
+    let mut buf_writer = writer.finish()?;
+    buf_writer.flush()?;
     replace_archive(temp, path)
 }
 
@@ -246,7 +282,8 @@ mod tests {
 
     fn create_archive(path: &Path, comment: &[u8], entries: &[(&str, &[u8])]) {
         let file = File::create(path).unwrap();
-        let mut writer = zip::ZipWriter::new(file);
+        let buf_writer = BufWriter::new(file);
+        let mut writer = zip::ZipWriter::new(buf_writer);
         writer.set_raw_comment(comment.to_vec().into_boxed_slice());
         let options = SimpleFileOptions::default()
             .compression_method(zip::CompressionMethod::Stored)
@@ -255,7 +292,8 @@ mod tests {
             writer.start_file(name, options).unwrap();
             writer.write_all(bytes).unwrap();
         }
-        writer.finish().unwrap();
+        let mut buf_writer = writer.finish().unwrap();
+        buf_writer.flush().unwrap();
     }
 
     #[test]
@@ -314,7 +352,8 @@ mod tests {
         .unwrap();
 
         let file = File::open(&path).unwrap();
-        let mut archive = zip::ZipArchive::new(file).unwrap();
+        let reader = BufReader::new(file);
+        let mut archive = zip::ZipArchive::new(reader).unwrap();
         assert_eq!(archive.comment(), b"archive-comment");
         assert_eq!(
             read_archive_entry(&path, "dps/keep.float32").unwrap(),

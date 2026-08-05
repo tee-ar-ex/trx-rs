@@ -180,8 +180,8 @@ pub fn load_vtk(path: &Path) -> Result<Tractogram, Box<dyn std::error::Error>> {
             .any(|w| w == b"int64");
         offset = offsets_header_end;
 
-        let mut offsets_vec = Vec::with_capacity(num_lines);
-        for _ in 0..num_lines {
+        let mut offsets_vec = Vec::with_capacity(num_lines + 1);
+        for _ in 0..=num_lines {
             if is_int64 {
                 let chunk = buffer
                     .get(offset..offset + 8)
@@ -199,7 +199,7 @@ pub fn load_vtk(path: &Path) -> Result<Tractogram, Box<dyn std::error::Error>> {
             }
         }
 
-        for i in 0..num_lines - 1 {
+        for i in 0..num_lines {
             let start = offsets_vec[i];
             let end = offsets_vec[i + 1];
             if end > pts.len() / 3 {

@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use bytemuck::{cast_slice, cast_slice_mut, Pod};
 use memmap2::{Mmap, MmapMut};
 
@@ -10,12 +12,18 @@ pub fn vec_to_bytes<T: Pod>(v: Vec<T>) -> Vec<u8> {
 
 /// Owns the backing memory for a TRX data array.
 ///
-/// May be a read-only mmap, a read-write mmap, or an owned heap buffer
-/// (used for converted offsets, deep copies, etc.).
+/// May be a read-only mmap, a read-write mmap, an owned heap buffer, or a slice of a shared mmap.
 pub enum MmapBacking {
     ReadOnly(Mmap),
     ReadWrite(MmapMut),
+    SharedSlice {
+        mmap: Arc<Mmap>,
+        offset: usize,
+        len: usize,
+    },
     Owned(Vec<u8>),
+    OwnedU64(Vec<u64>, usize),
+    OwnedU32(Vec<u32>, usize),
 }
 
 impl MmapBacking {
@@ -24,7 +32,10 @@ impl MmapBacking {
         match self {
             MmapBacking::ReadOnly(m) => m,
             MmapBacking::ReadWrite(m) => m,
+            MmapBacking::SharedSlice { mmap, offset, len } => &mmap[*offset..*offset + *len],
             MmapBacking::Owned(v) => v,
+            MmapBacking::OwnedU64(v, len) => &bytemuck::cast_slice(v)[..*len],
+            MmapBacking::OwnedU32(v, len) => &bytemuck::cast_slice(v)[..*len],
         }
     }
 
@@ -34,8 +45,13 @@ impl MmapBacking {
             MmapBacking::ReadOnly(_) => Err(TrxError::Argument(
                 "cannot mutably access read-only mmap".into(),
             )),
+            MmapBacking::SharedSlice { .. } => Err(TrxError::Argument(
+                "cannot mutably access shared mmap slice".into(),
+            )),
             MmapBacking::ReadWrite(m) => Ok(m.as_mut()),
             MmapBacking::Owned(v) => Ok(v.as_mut_slice()),
+            MmapBacking::OwnedU64(v, len) => Ok(&mut bytemuck::cast_slice_mut(v)[..*len]),
+            MmapBacking::OwnedU32(v, len) => Ok(&mut bytemuck::cast_slice_mut(v)[..*len]),
         }
     }
 
@@ -50,7 +66,10 @@ impl MmapBacking {
     }
 
     pub fn is_mapped(&self) -> bool {
-        matches!(self, MmapBacking::ReadOnly(_) | MmapBacking::ReadWrite(_))
+        matches!(
+            self,
+            MmapBacking::ReadOnly(_) | MmapBacking::ReadWrite(_) | MmapBacking::SharedSlice { .. }
+        )
     }
 
     /// Cast the raw bytes to a typed slice.
@@ -73,7 +92,40 @@ impl std::fmt::Debug for MmapBacking {
         match self {
             MmapBacking::ReadOnly(m) => write!(f, "ReadOnly({} bytes)", m.len()),
             MmapBacking::ReadWrite(m) => write!(f, "ReadWrite({} bytes)", m.len()),
+            MmapBacking::SharedSlice { offset, len, .. } => {
+                write!(f, "SharedSlice({} bytes at offset {})", len, offset)
+            }
             MmapBacking::Owned(v) => write!(f, "Owned({} bytes)", v.len()),
+            MmapBacking::OwnedU64(_, len) => write!(f, "OwnedU64({} bytes)", len),
+            MmapBacking::OwnedU32(_, len) => write!(f, "OwnedU32({} bytes)", len),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn shared_slice_behavior_and_mapping_status() {
+        let mut anon = memmap2::MmapMut::map_anon(16).unwrap();
+        anon[0..4].copy_from_slice(&1.0f32.to_ne_bytes());
+        anon[4..8].copy_from_slice(&2.0f32.to_ne_bytes());
+        let mmap = Arc::new(anon.make_read_only().unwrap());
+
+        let mut backing = MmapBacking::SharedSlice {
+            mmap: Arc::clone(&mmap),
+            offset: 0,
+            len: 8,
+        };
+
+        assert!(backing.is_mapped());
+        assert_eq!(backing.len(), 8);
+        assert_eq!(backing.as_bytes(), &mmap[0..8]);
+        assert_eq!(backing.cast_slice::<f32>(), &[1.0f32, 2.0f32]);
+        assert!(backing.as_bytes_mut().is_err());
+
+        let owned = MmapBacking::Owned(vec![1, 2, 3]);
+        assert!(!owned.is_mapped());
     }
 }

@@ -15,7 +15,7 @@ use crate::trx_file::TrxFile;
 /// - If `path` has a `.trx` extension (or is a file), loads from zip.
 pub fn load<P: TrxScalar>(path: &Path) -> Result<TrxFile<P>> {
     if path.is_dir() {
-        directory::load_from_directory(path, None)
+        directory::load_from_directory(path)
     } else if path.is_file() {
         zip::load_from_zip(path)
     } else {

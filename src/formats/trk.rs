@@ -54,7 +54,6 @@ pub fn convert_trk_to_trx(
         dpv: parsed.dpv,
         groups: HashMap::new(),
         dpg: HashMap::new(),
-        tempdir: None,
     });
 
     let any = AnyTrxFile::F32(file);

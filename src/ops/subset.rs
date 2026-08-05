@@ -45,7 +45,6 @@ pub fn subset_streamlines<P: TrxScalar>(trx: &TrxFile<P>, indices: &[usize]) -> 
         dpv: new_dpv,
         groups: new_groups,
         dpg: new_dpg,
-        tempdir: None,
     }))
 }
 

@@ -399,7 +399,6 @@ mod tests {
             dpv: HashMap::new(),
             groups: HashMap::new(),
             dpg: HashMap::new(),
-            tempdir: None,
         })
     }
 

@@ -354,14 +354,14 @@ fn build_prefix_on_disk(n: usize) -> TrxFile<f16> {
     let (ref_dir, ref_nb, _) = get_reference_dir();
     let count = n.min(*ref_nb);
 
-    let tmp = tempfile::TempDir::new().unwrap();
-    let dir = tmp.path().to_path_buf();
+    #[allow(deprecated)]
+    let dir = tempfile::TempDir::new().unwrap().into_path();
     std::fs::create_dir_all(&dir).unwrap();
 
     if count == *ref_nb {
         // Full copy — use hardlinks where possible, fallback to copy.
         copy_dir_recursive(ref_dir, &dir);
-        return trx_rs::io::directory::load_from_directory(&dir, Some(tmp)).unwrap();
+        return trx_rs::io::directory::load_from_directory(&dir).unwrap();
     }
 
     // Read offsets from reference to find vertex_cutoff.
@@ -402,7 +402,7 @@ fn build_prefix_on_disk(n: usize) -> TrxFile<f16> {
     header.nb_vertices = vertex_cutoff as u64;
     header.write_to(&dir.join("header.json")).unwrap();
 
-    trx_rs::io::directory::load_from_directory(&dir, Some(tmp)).unwrap()
+    trx_rs::io::directory::load_from_directory(&dir).unwrap()
 }
 
 /// Copy the first `n_bytes` from `src` to `dst`.

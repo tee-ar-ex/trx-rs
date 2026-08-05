@@ -348,7 +348,6 @@ impl Tractogram {
             dpv: clone_arrays(&self.dpv),
             groups: groups_to_data_arrays(&self.groups),
             dpg: clone_dpg(&self.dpg),
-            tempdir: None,
         }))
     }
 }
