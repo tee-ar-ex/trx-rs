@@ -483,8 +483,8 @@ pub fn write_trx(
 ///      (argmax of abs values) with axis-exclusion to handle oblique cases.
 fn axcodes_from_affine(aff: &[[f64; 4]; 4]) -> [u8; 3] {
     use nalgebra::{Matrix3, SVD};
-    const POS: [u8; 3] = [b'R', b'A', b'S'];
-    const NEG: [u8; 3] = [b'L', b'P', b'I'];
+    const POS: [u8; 3] = *b"RAS";
+    const NEG: [u8; 3] = *b"LPI";
 
     // Step 1: build column-normalized 3×3 matrix
     let mut rs = Matrix3::<f64>::zeros();
