@@ -83,7 +83,7 @@ fn get_entry_backing(
         }
         let ptr_val = arc_mmap.as_ptr() as usize + data_start;
         let req = align_requirement.max(1);
-        if ptr_val % req == 0 {
+        if ptr_val.is_multiple_of(req) {
             Ok(MmapBacking::SharedSlice {
                 mmap: Arc::clone(arc_mmap),
                 offset: data_start,
@@ -91,14 +91,14 @@ fn get_entry_backing(
             })
         } else {
             let slice = &arc_mmap[data_start..data_start + size];
-            let num_u64s = (size + 7) / 8;
+            let num_u64s = size.div_ceil(8);
             let mut values = vec![0u64; num_u64s];
             let bytes_slice = bytemuck::cast_slice_mut(&mut values);
             bytes_slice[..size].copy_from_slice(slice);
             Ok(MmapBacking::OwnedU64(values, size))
         }
     } else {
-        let num_u64s = (size + 7) / 8;
+        let num_u64s = size.div_ceil(8);
         let mut values = vec![0u64; num_u64s];
         let bytes_slice = bytemuck::cast_slice_mut(&mut values);
         // We use read_exact or read_to_end into a subslice

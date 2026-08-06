@@ -3,6 +3,22 @@ from pathlib import Path
 
 import pytest
 
+try:
+    import dipy.utils.optpkg
+
+    _orig_optional_package = dipy.utils.optpkg.optional_package
+
+    def _patched_optional_package(name, *, trip_msg=None, min_version=None, max_version=None):
+        if name == "fury":
+            max_version = None
+        return _orig_optional_package(
+            name, trip_msg=trip_msg, min_version=min_version, max_version=max_version
+        )
+
+    dipy.utils.optpkg.optional_package = _patched_optional_package
+except ImportError:
+    pass
+
 
 @pytest.fixture(scope="session")
 def repo_root() -> Path:

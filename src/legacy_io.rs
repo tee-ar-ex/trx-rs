@@ -178,7 +178,7 @@ pub fn load_vtk(path: &Path) -> Result<Tractogram, Box<dyn std::error::Error>> {
 
         let header_str = String::from_utf8_lossy(&buffer[offset..offsets_header_end]);
         let tokens: Vec<&str> = header_str.split_whitespace().collect();
-        
+
         let num_offsets = if tokens.len() >= 3 {
             tokens[2].parse().unwrap_or(num_lines)
         } else {
@@ -489,10 +489,7 @@ fn axcodes_from_affine(aff: &[[f64; 4]; 4]) -> [u8; 3] {
     // Step 1: build column-normalized 3×3 matrix
     let mut rs = Matrix3::<f64>::zeros();
     for col in 0..3 {
-        let norm = (0..3)
-            .map(|r| aff[r][col].powi(2))
-            .sum::<f64>()
-            .sqrt();
+        let norm = (0..3).map(|r| aff[r][col].powi(2)).sum::<f64>().sqrt();
         let norm = if norm == 0.0 { 1.0 } else { norm };
         for row in 0..3 {
             rs[(row, col)] = aff[row][col] / norm;
@@ -501,9 +498,9 @@ fn axcodes_from_affine(aff: &[[f64; 4]; 4]) -> [u8; 3] {
 
     // Step 2: SVD → R = U * V^T (polar factor, closest orthonormal matrix)
     let svd = SVD::new(rs, true, true);
-    let u   = svd.u.expect("SVD U not computed");
+    let u = svd.u.expect("SVD U not computed");
     let v_t = svd.v_t.expect("SVD V^T not computed");
-    let r   = u * v_t;
+    let r = u * v_t;
 
     // Step 3: per-column argmax with axis exclusion (mirrors nibabel exactly)
     let mut used = [false; 3];
@@ -518,7 +515,11 @@ fn axcodes_from_affine(aff: &[[f64; 4]; 4]) -> [u8; 3] {
             }
         }
         used[best_row] = true;
-        codes[col] = if r[(best_row, col)] >= 0.0 { POS[best_row] } else { NEG[best_row] };
+        codes[col] = if r[(best_row, col)] >= 0.0 {
+            POS[best_row]
+        } else {
+            NEG[best_row]
+        };
     }
     codes
 }
