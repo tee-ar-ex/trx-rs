@@ -116,6 +116,12 @@ fn load_zip_offsets(
 ) -> Result<MmapBacking> {
     match dtype {
         crate::dtype::DType::UInt64 => {
+            if entry.size() % 8 != 0 {
+                return Err(TrxError::Format(format!(
+                    "offsets entry size {} is not a multiple of 8 for uint64",
+                    entry.size()
+                )));
+            }
             let mut values = vec![0u64; entry.size() as usize / 8];
             Read::read_exact(entry, bytemuck::cast_slice_mut(&mut values))?;
             if values.len() == nb_streamlines {
@@ -153,11 +159,17 @@ fn load_zip_offsets(
             }
         }
         crate::dtype::DType::UInt32 => {
+            if entry.size() % 4 != 0 {
+                return Err(TrxError::Format(format!(
+                    "offsets entry size {} is not a multiple of 4 for uint32",
+                    entry.size()
+                )));
+            }
             let num_u32 = entry.size() as usize / 4;
             if num_u32 == nb_streamlines {
-                let mut values = vec![0u32; entry.size() as usize / 4];
+                let mut values = vec![0u32; num_u32];
                 Read::read_exact(entry, bytemuck::cast_slice_mut(&mut values))?;
-                let mut out = values.to_vec();
+                let mut out = values;
                 out.push(nb_vertices as u32);
                 let len = out.len() * 4;
                 Ok(MmapBacking::OwnedU32(out, len))
@@ -755,5 +767,37 @@ mod tests {
         assert_eq!(loaded.nb_streamlines(), 1);
         assert_eq!(loaded.nb_vertices(), 2);
         assert_eq!(loaded.streamline(0), trx.streamline(0));
+    }
+
+    #[test]
+    fn zip_unaligned_offsets_size_errors() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let zip_path = dir.path().join("corrupt_offsets.trx");
+
+        let file = std::fs::File::create(&zip_path).unwrap();
+        let mut zip = zip::ZipWriter::new(file);
+
+        let header = Header {
+            voxel_to_rasmm: Header::identity_affine(),
+            dimensions: [100, 100, 100],
+            nb_streamlines: 0,
+            nb_vertices: 0,
+            extra: Default::default(),
+        };
+        let json = serde_json::to_string(&header).unwrap();
+        zip.start_file("header.json", zip::write::SimpleFileOptions::default()).unwrap();
+        zip.write_all(json.as_bytes()).unwrap();
+
+        // Write positions.bit32.ncols3.raw (0 vertices)
+        zip.start_file("positions.bit32.ncols3.raw", zip::write::SimpleFileOptions::default()).unwrap();
+
+        // Write unaligned offsets (e.g. 5 bytes instead of multiple of 4 or 8)
+        zip.start_file("offsets.bit32.ncols1.raw", zip::write::SimpleFileOptions::default()).unwrap();
+        zip.write_all(&[0u8; 5]).unwrap();
+
+        zip.finish().unwrap();
+
+        let res = load_from_zip::<f32>(&zip_path);
+        assert!(res.is_err());
     }
 }

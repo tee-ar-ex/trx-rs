@@ -148,8 +148,7 @@ pub fn load_from_directory<P: TrxScalar>(dir: &Path) -> Result<TrxFile<P>> {
         }
         Err(e) => {
             if header.nb_streamlines == 0 {
-                let anon = memmap2::MmapMut::map_anon(4).unwrap();
-                MmapBacking::ReadOnly(anon.make_read_only().unwrap())
+                MmapBacking::OwnedU32(vec![0u32], 4)
             } else {
                 return Err(e);
             }
