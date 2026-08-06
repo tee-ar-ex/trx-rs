@@ -32,6 +32,11 @@ fn streamline_key<P: TrxScalar>(points: &[[P; 3]]) -> StreamlineKey {
     StreamlineKey(bytemuck::cast_slice::<[P; 3], u8>(points).to_vec())
 }
 
+/// Compute the set of streamline indices to retain after duplicate removal.
+///
+/// Returns a sorted `Vec<usize>` of indices that are kept according to `params`.
+/// The returned indices can be passed to [`subset_streamlines`] to produce the
+/// deduplicated file.
 pub fn retain_representative_indices<P: TrxScalar>(
     trx: &TrxFile<P>,
     params: &DuplicateRemovalParams,
@@ -48,6 +53,10 @@ pub fn retain_representative_indices<P: TrxScalar>(
     )
 }
 
+/// Remove duplicate streamlines from a [`TrxFile`], returning a new file.
+///
+/// This is a convenience wrapper around [`retain_representative_indices`]
+/// followed by [`subset_streamlines`].
 pub fn remove_duplicates<P: TrxScalar>(
     trx: &TrxFile<P>,
     params: &DuplicateRemovalParams,
@@ -56,6 +65,10 @@ pub fn remove_duplicates<P: TrxScalar>(
     subset_streamlines(trx, &indices)
 }
 
+/// Compute duplicate-removal indices for a [`Tractogram`] (the format-neutral representation).
+///
+/// Equivalent to [`retain_representative_indices`] but operates on [`Tractogram`]
+/// instead of [`TrxFile`].
 pub fn retain_tractogram_representative_indices(
     tractogram: &Tractogram,
     params: &DuplicateRemovalParams,
@@ -67,6 +80,10 @@ pub fn retain_tractogram_representative_indices(
     )
 }
 
+/// Remove duplicate streamlines from a [`Tractogram`], returning a new tractogram.
+///
+/// Convenience wrapper around [`retain_tractogram_representative_indices`] followed by
+/// [`Tractogram::subset_streamlines`].
 pub fn remove_duplicates_tractogram(
     tractogram: &Tractogram,
     params: &DuplicateRemovalParams,
@@ -395,17 +412,27 @@ fn point_segment_distance_squared(point: [f32; 3], start: [f32; 3], end: [f32; 3
     squared_distance(point, closest)
 }
 
+/// Controls the duplicate detection strategy.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum DuplicateRemovalMode {
+    /// Byte-identical streamlines (after canonicalisation) are duplicates.
     Exact,
+    /// Streamlines whose endpoint neighbourhoods and voxel paths overlap
+    /// within tolerance are considered duplicates.
     Near,
 }
 
+/// Parameters that tune duplicate detection behaviour.
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct DuplicateRemovalParams {
+    /// Detection strategy (Exact or Near).
     pub mode: DuplicateRemovalMode,
+    /// Spatial tolerance in mm for `Near` mode voxel overlap checks.
     pub tolerance_mm: f32,
+    /// Tolerance in mm for quantising streamline endpoints into the same cell.
     pub endpoint_tolerance_mm: f32,
+    /// Minimum fraction of voxels that must be shared between two streamlines
+    /// for them to be considered duplicates in `Near` mode.
     pub min_shared_voxel_fraction: f32,
 }
 

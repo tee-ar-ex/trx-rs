@@ -4,17 +4,24 @@ use crate::error::{Result, TrxError};
 use crate::header::Header;
 use crate::tractogram::Tractogram;
 
+/// Controls how VTK coordinate spaces are interpreted during import.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum VtkCoordinateMode {
+    /// Read the VTK header comment for `SPACE=`, warn if absent.
     HeaderOrWarn,
+    /// Assume coordinates are in RAS space (the default).
     #[default]
     AssumeRas,
+    /// Assume coordinates are in LPS space.
     AssumeLps,
 }
 
+/// The anatomical coordinate space declared or inferred for VTK data.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum VtkCoordinateSpace {
+    /// Right-Anterior-Superior.
     Ras,
+    /// Left-Posterior-Superior.
     Lps,
 }
 
