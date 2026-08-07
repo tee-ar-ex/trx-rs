@@ -17,6 +17,10 @@ const TRK_HEADER_SIZE: usize = 1000;
 const MAX_NAMED_SCALARS_PER_POINT: usize = 10;
 const MAX_NAMED_PROPERTIES_PER_STREAMLINE: usize = 10;
 
+/// Read a TrackVis `.trk` file into a [`Tractogram`].
+///
+/// Returns an error if the file contains TrackVis scalars or properties
+/// (use [`convert_trk_to_trx`] to preserve those).
 pub fn read_trk(path: &Path, _header_override: Option<Header>) -> Result<Tractogram> {
     let parsed = parse_trk(path)?;
 
@@ -33,6 +37,7 @@ pub fn read_trk(path: &Path, _header_override: Option<Header>) -> Result<Tractog
     Ok(tractogram)
 }
 
+/// Convert a TrackVis `.trk` file directly to TRX, preserving scalars and properties.
 pub fn convert_trk_to_trx(
     input: &Path,
     output: &Path,

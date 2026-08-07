@@ -266,6 +266,7 @@ pub fn save_to_directory<P: TrxScalar>(trx: &TrxFile<P>, dir: &Path) -> Result<(
     Ok(())
 }
 
+/// Append DPS arrays to a TRX directory, optionally overwriting existing entries.
 pub fn append_dps_to_directory(
     dir: &Path,
     dps: &HashMap<String, DataArray>,
@@ -276,6 +277,7 @@ pub fn append_dps_to_directory(
     append_arrays_to_directory(&dir.join("dps"), dps, overwrite)
 }
 
+/// Append DPV arrays to a TRX directory, optionally overwriting existing entries.
 pub fn append_dpv_to_directory(
     dir: &Path,
     dpv: &HashMap<String, DataArray>,
@@ -286,6 +288,7 @@ pub fn append_dpv_to_directory(
     append_arrays_to_directory(&dir.join("dpv"), dpv, overwrite)
 }
 
+/// Append group membership arrays to a TRX directory, optionally overwriting existing entries.
 pub fn append_groups_to_directory(
     dir: &Path,
     groups: &HashMap<String, Vec<u32>>,
@@ -313,6 +316,7 @@ pub fn append_groups_to_directory(
     Ok(())
 }
 
+/// Append DPG (data-per-group) entries to a TRX directory, optionally overwriting existing entries.
 pub fn append_dpg_to_directory(dir: &Path, dpg: &DataPerGroup, overwrite: bool) -> Result<()> {
     let groups_dir = dir.join("groups");
     let dpg_root = dir.join("dpg");
@@ -343,14 +347,17 @@ pub fn append_dpg_to_directory(dir: &Path, dpg: &DataPerGroup, overwrite: bool) 
     Ok(())
 }
 
+/// Delete named DPS arrays from a TRX directory.
 pub fn delete_dps_from_directory(dir: &Path, names: &[&str]) -> Result<()> {
     delete_named_arrays(&dir.join("dps"), names)
 }
 
+/// Delete named DPV arrays from a TRX directory.
 pub fn delete_dpv_from_directory(dir: &Path, names: &[&str]) -> Result<()> {
     delete_named_arrays(&dir.join("dpv"), names)
 }
 
+/// Delete named groups (and their DPG entries) from a TRX directory.
 pub fn delete_groups_from_directory(dir: &Path, names: &[&str]) -> Result<()> {
     let groups_dir = dir.join("groups");
     for name in names {
@@ -367,6 +374,10 @@ pub fn delete_groups_from_directory(dir: &Path, names: &[&str]) -> Result<()> {
     Ok(())
 }
 
+/// Delete DPG entries for a specific group from a TRX directory.
+///
+/// When `names` is `None` or empty, the entire DPG subdirectory for the group is removed.
+/// When `names` lists specific fields, only those entries are deleted.
 pub fn delete_dpg_from_directory(dir: &Path, group: &str, names: Option<&[&str]>) -> Result<()> {
     let group_dir = dir.join("dpg").join(group);
     match names {

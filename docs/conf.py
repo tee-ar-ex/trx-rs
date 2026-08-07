@@ -1,13 +1,15 @@
-project = "trxrs"
+project = "trx-rs"
 author = "TRX developers"
 copyright = "2026, TRX developers"
 
-extensions = ["myst_parser"]
+extensions = [
+    "myst_parser",
+    "sphinx.ext.intersphinx",
+]
 
 myst_enable_extensions = ["colon_fence", "deflist", "fieldlist"]
 
-templates_path = ["_templates"]
-exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
+exclude_patterns = ["_build", ".DS_Store"]
 
 html_theme = "pydata_sphinx_theme"
 html_theme_options = {
@@ -20,6 +22,14 @@ html_theme_options = {
     ],
     "show_nav_level": 2,
     "navigation_with_keys": True,
-}
-html_title = "trxrs"
+    "logo": {
+        "image_light": "_static/trx_logo.png",
+        "image_dark": "_static/trx_logo.png",
+        "alt_text": "TRX",
+        "link": "https://tee-ar-ex.github.io",
+    },}
+html_title = "trx-rs"
 
+intersphinx_mapping = {
+    "python": ("https://docs.python.org/3", None),
+}
