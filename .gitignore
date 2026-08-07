@@ -1,7 +1,6 @@
 # Build artifacts
 /target
 _build
-docs/_build/*
 **/*.rs.bk
 /python/.maturin
 /python/.pytest_cache
