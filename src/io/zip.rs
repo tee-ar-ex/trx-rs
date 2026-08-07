@@ -785,11 +785,8 @@ mod tests {
             extra: Default::default(),
         };
         let json = serde_json::to_string(&header).unwrap();
-        zip.start_file(
-            "header.json",
-            zip::write::SimpleFileOptions::default(),
-        )
-        .unwrap();
+        zip.start_file("header.json", zip::write::SimpleFileOptions::default())
+            .unwrap();
         zip.write_all(json.as_bytes()).unwrap();
 
         // Write positions.bit32.ncols3.raw (0 vertices)
