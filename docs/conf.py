@@ -31,6 +31,8 @@ html_theme_options = {
 
 html_title = "trx-rs"
 
+templates_path = ["_templates"]
+
 html_sidebars = {
     "**": ["sidebar-nav-bs.html", "implementation-links.html"],
 }
