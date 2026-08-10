@@ -14,15 +14,22 @@ pub use vtk::{
     inspect_vtk_declared_space, vtk_import_warnings, VtkCoordinateMode, VtkCoordinateSpace,
 };
 
+/// Supported tractogram file formats.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Format {
+    /// TRX format (directory or `.trx` zip archive).
     Trx,
+    /// TrackVis `.trk` / `.trk.gz`.
     Trk,
+    /// MRtrix `.tck` / `.tck.gz`.
     Tck,
+    /// VTK legacy polydata `.vtk`.
     Vtk,
+    /// DSI Studio Tiny Track `.tt.gz` (import only).
     TinyTrack,
 }
 
+/// Options that control tractogram conversion behaviour.
 #[derive(Clone, Debug)]
 pub struct ConversionOptions {
     /// Optional header override for formats that do not carry TRX-style metadata.
@@ -43,6 +50,9 @@ impl Default for ConversionOptions {
     }
 }
 
+/// Detect the tractogram format from a file path or directory.
+///
+/// Returns `Err` if the path does not match a known format.
 pub fn detect_format(path: &Path) -> Result<Format> {
     let file_name = path
         .file_name()
@@ -73,6 +83,9 @@ pub fn detect_format(path: &Path) -> Result<Format> {
     )))
 }
 
+/// Read a tractogram from any supported format into the neutral in-memory representation.
+///
+/// Dispatches to the format-specific reader based on [`detect_format`].
 pub fn read_tractogram(path: &Path, options: &ConversionOptions) -> Result<Tractogram> {
     match detect_format(path)? {
         Format::Trx => Ok(Tractogram::from(&AnyTrxFile::load(path)?)),
@@ -83,6 +96,9 @@ pub fn read_tractogram(path: &Path, options: &ConversionOptions) -> Result<Tract
     }
 }
 
+/// Write a tractogram to any supported output format.
+///
+/// Dispatches to the format-specific writer based on [`detect_format`].
 pub fn write_tractogram(
     path: &Path,
     tractogram: &Tractogram,
@@ -120,6 +136,9 @@ pub fn write_tractogram(
     }
 }
 
+/// Convert between tractogram file formats in one step.
+///
+/// Reads from `input`, writes to `output`, applying the given [`ConversionOptions`].
 pub fn convert(input: &Path, output: &Path, options: &ConversionOptions) -> Result<()> {
     if detect_format(input)? == Format::Trk && detect_format(output)? == Format::Trx {
         return trk::convert_trk_to_trx(input, output, options);

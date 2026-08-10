@@ -16,6 +16,10 @@ use crate::trx_file::DataArray;
 use self::decode::{apply_affine, decode_tiny_track, TinyTrackData};
 use self::mat::read_tt_mat_records;
 
+/// Read a DSI Studio Tiny Track `.tt.gz` file into a [`Tractogram`].
+///
+/// Cluster IDs become TRX groups, and TT colors become `dpg/<group>/color.3.uint8`.
+/// Sidecar `.txt` labels are used for group names when present.
 pub fn read_tt(path: &Path) -> Result<Tractogram> {
     if !path
         .file_name()

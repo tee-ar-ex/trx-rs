@@ -126,6 +126,7 @@ fn remap_dpg(dpg: &DataPerGroup, groups: &HashMap<String, DataArray>) -> DataPer
     out
 }
 
+/// Axis-aligned bounding box for a single streamline.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct StreamlineAabb {
     min: [f32; 3],
@@ -133,14 +134,17 @@ pub struct StreamlineAabb {
 }
 
 impl StreamlineAabb {
+    /// Minimum corner of the bounding box (x, y, z).
     pub fn min(&self) -> [f32; 3] {
         self.min
     }
 
+    /// Maximum corner of the bounding box (x, y, z).
     pub fn max(&self) -> [f32; 3] {
         self.max
     }
 
+    /// Returns true if this AABB overlaps the given query box.
     pub fn overlaps_box(&self, min: [f32; 3], max: [f32; 3]) -> bool {
         self.min[0] <= max[0]
             && self.max[0] >= min[0]
@@ -169,6 +173,10 @@ pub fn build_streamline_aabbs<P: TrxScalar>(trx: &TrxFile<P>) -> Vec<StreamlineA
     )
 }
 
+/// Compute per-streamline AABBs from flat position and offset slices.
+///
+/// Useful when positions are already in a flat `[[f32; 3]]` array rather than
+/// inside a `TrxFile`.
 pub fn build_streamline_aabbs_from_slices(
     positions: &[[f32; 3]],
     offsets: &[u32],
