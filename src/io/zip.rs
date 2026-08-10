@@ -116,7 +116,7 @@ fn load_zip_offsets(
 ) -> Result<MmapBacking> {
     match dtype {
         crate::dtype::DType::UInt64 => {
-            if entry.size() % 8 != 0 {
+            if !entry.size().is_multiple_of(8) {
                 return Err(TrxError::Format(format!(
                     "offsets entry size {} is not a multiple of 8 for uint64",
                     entry.size()
@@ -159,7 +159,7 @@ fn load_zip_offsets(
             }
         }
         crate::dtype::DType::UInt32 => {
-            if entry.size() % 4 != 0 {
+            if !entry.size().is_multiple_of(4) {
                 return Err(TrxError::Format(format!(
                     "offsets entry size {} is not a multiple of 4 for uint32",
                     entry.size()
@@ -796,14 +796,23 @@ mod tests {
             extra: Default::default(),
         };
         let json = serde_json::to_string(&header).unwrap();
-        zip.start_file("header.json", zip::write::SimpleFileOptions::default()).unwrap();
+        zip.start_file("header.json", zip::write::SimpleFileOptions::default())
+            .unwrap();
         zip.write_all(json.as_bytes()).unwrap();
 
         // Write positions.bit32.ncols3.raw (0 vertices)
-        zip.start_file("positions.bit32.ncols3.raw", zip::write::SimpleFileOptions::default()).unwrap();
+        zip.start_file(
+            "positions.bit32.ncols3.raw",
+            zip::write::SimpleFileOptions::default(),
+        )
+        .unwrap();
 
         // Write unaligned offsets (e.g. 5 bytes instead of multiple of 4 or 8)
-        zip.start_file("offsets.bit32.ncols1.raw", zip::write::SimpleFileOptions::default()).unwrap();
+        zip.start_file(
+            "offsets.bit32.ncols1.raw",
+            zip::write::SimpleFileOptions::default(),
+        )
+        .unwrap();
         zip.write_all(&[0u8; 5]).unwrap();
 
         zip.finish().unwrap();
