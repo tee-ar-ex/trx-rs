@@ -28,7 +28,12 @@ html_theme_options = {
         "alt_text": "TRX",
         "link": "https://tee-ar-ex.github.io",
     },}
+
 html_title = "trx-rs"
+
+html_sidebars = {
+    "**": ["sidebar-nav-bs.html", "implementation-links.html"],
+}
 
 intersphinx_mapping = {
     "python": ("https://docs.python.org/3", None),
