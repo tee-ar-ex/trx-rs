@@ -5,9 +5,16 @@ copyright = "2026, TRX developers"
 extensions = [
     "myst_parser",
     "sphinx.ext.intersphinx",
+    "sphinx_design"
 ]
 
-myst_enable_extensions = ["colon_fence", "deflist", "fieldlist"]
+myst_enable_extensions = [
+    "colon_fence",
+    "deflist",
+    "fieldlist",
+    "html_image",
+    "tasklist",
+    ]
 
 exclude_patterns = ["_build", ".DS_Store"]
 
@@ -28,7 +35,14 @@ html_theme_options = {
         "alt_text": "TRX",
         "link": "https://tee-ar-ex.github.io",
     },}
+
 html_title = "trx-rs"
+
+templates_path = ["_templates"]
+
+html_sidebars = {
+    "**": ["sidebar-nav-bs.html", "implementation-links.html"],
+}
 
 intersphinx_mapping = {
     "python": ("https://docs.python.org/3", None),

@@ -1,5 +1,15 @@
 # Quick start
 
+## Supported data types
+
+| Type | Positions | DPS/DPV |
+|------|-----------|---------|
+| `f16` (half) | Yes | Yes |
+| `f32` | Yes | Yes |
+| `f64` | Yes | Yes |
+| `u8`, `u16`, `u32`, `u64` | - | Yes |
+| `i8`, `i16`, `i32`, `i64` | - | Yes |
+
 ## Load and iterate streamlines
 
 ```rust
