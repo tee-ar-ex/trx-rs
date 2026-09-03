@@ -5,9 +5,16 @@ copyright = "2026, TRX developers"
 extensions = [
     "myst_parser",
     "sphinx.ext.intersphinx",
+    "sphinx_design"
 ]
 
-myst_enable_extensions = ["colon_fence", "deflist", "fieldlist"]
+myst_enable_extensions = [
+    "colon_fence",
+    "deflist",
+    "fieldlist",
+    "html_image",
+    "tasklist",
+    ]
 
 exclude_patterns = ["_build", ".DS_Store"]
 
