@@ -2,11 +2,8 @@
 
 A Rust library for reading, writing, and manipulating [TRX](https://github.com/tee-ar-ex/trx-spec) brain tractography files, plus format-conversion helpers for common streamline formats.
 
-TRX is a binary file format for storing streamline tractography data using memory-mapped arrays. It supports multiple coordinate precisions (f16, f32, f64), per-vertex data (DPV), per-streamline data (DPS), named groups, and data-per-group (DPG) arrays — all backed by zero-copy memory mapping for efficient access to large datasets.
-
 ```{toctree}
 :maxdepth: 2
-
 installation
 quickstart
 conversion
