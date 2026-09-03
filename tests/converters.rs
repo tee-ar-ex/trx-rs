@@ -64,10 +64,7 @@ fn load_rasmm_coords(path: &Path) -> Vec<[f32; 3]> {
         .split_whitespace()
         .map(|value| value.parse::<f32>().expect("failed to parse coordinate"))
         .collect();
-    values
-        .chunks_exact(3)
-        .map(|chunk| [chunk[0], chunk[1], chunk[2]])
-        .collect()
+    values.as_chunks::<3>().0.to_vec()
 }
 
 fn gold_standard_dir() -> PathBuf {
