@@ -230,7 +230,7 @@ fn parse_binary_points(
     let mut points = Vec::with_capacity(point_count);
     match point_type {
         "float" => {
-            for chunk in data.chunks_exact(12) {
+            for chunk in data.as_chunks::<12>().0 {
                 points.push([
                     f32::from_be_bytes(chunk[0..4].try_into().unwrap()),
                     f32::from_be_bytes(chunk[4..8].try_into().unwrap()),
@@ -239,7 +239,7 @@ fn parse_binary_points(
             }
         }
         "double" => {
-            for chunk in data.chunks_exact(24) {
+            for chunk in data.as_chunks::<24>().0 {
                 points.push([
                     f64::from_be_bytes(chunk[0..8].try_into().unwrap()) as f32,
                     f64::from_be_bytes(chunk[8..16].try_into().unwrap()) as f32,
@@ -279,8 +279,8 @@ fn parse_binary_points(
         .ok_or_else(|| TrxError::Format("VTK line section is truncated".into()))?;
 
     let mut ints = Vec::with_capacity(total_size);
-    for chunk in data.chunks_exact(4) {
-        ints.push(i32::from_be_bytes(chunk.try_into().unwrap()));
+    for chunk in data.as_chunks::<4>().0 {
+        ints.push(i32::from_be_bytes(*chunk));
     }
 
     build_streamlines_from_ints(points, line_count, ints)

@@ -109,7 +109,7 @@ fn load_rasmm_coords(path: &Path) -> Vec<[f32; 3]> {
         .map(|s| s.parse::<f32>().expect("failed to parse float"))
         .collect();
     assert_eq!(values.len() % 3, 0, "coordinate count not multiple of 3");
-    values.chunks_exact(3).map(|c| [c[0], c[1], c[2]]).collect()
+    values.as_chunks::<3>().0.to_vec()
 }
 
 // ── Gold Standard Tests ─────────────────────────────────────────────

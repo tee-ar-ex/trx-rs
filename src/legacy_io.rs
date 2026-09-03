@@ -264,24 +264,17 @@ pub fn load_nifti_header(path: &Path) -> Result<crate::header::Header, Box<dyn s
     sizeof_hdr_bytes.copy_from_slice(&buffer[0..4]);
     let sizeof_hdr = i32::from_le_bytes(sizeof_hdr_bytes);
 
-    let is_nifti2;
-    let swap_endian;
-
-    if sizeof_hdr == 348 {
-        is_nifti2 = false;
-        swap_endian = false;
+    let (is_nifti2, swap_endian) = if sizeof_hdr == 348 {
+        (false, false)
     } else if sizeof_hdr == 348i32.swap_bytes() {
-        is_nifti2 = false;
-        swap_endian = true;
+        (false, true)
     } else if sizeof_hdr == 540 {
-        is_nifti2 = true;
-        swap_endian = false;
+        (true, false)
     } else if sizeof_hdr == 540i32.swap_bytes() {
-        is_nifti2 = true;
-        swap_endian = true;
+        (true, true)
     } else {
         return Err(format!("Unsupported NIfTI sizeof_hdr: {}", sizeof_hdr).into());
-    }
+    };
 
     if is_nifti2 && buffer.len() < 540 {
         return Err("NIfTI-2 file too small".into());

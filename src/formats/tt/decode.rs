@@ -106,8 +106,10 @@ fn parse_f32_array(record: &MatRecord, len: usize) -> Result<Vec<f32>> {
     }
     Ok(record
         .payload
-        .chunks_exact(4)
-        .map(|chunk| f32::from_le_bytes(chunk.try_into().unwrap()))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|chunk| f32::from_le_bytes(*chunk))
         .collect())
 }
 
@@ -117,8 +119,10 @@ fn parse_u16_vec(record: &MatRecord) -> Result<Vec<u16>> {
     }
     Ok(record
         .payload
-        .chunks_exact(2)
-        .map(|chunk| u16::from_le_bytes(chunk.try_into().unwrap()))
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|chunk| u16::from_le_bytes(*chunk))
         .collect())
 }
 
@@ -128,8 +132,10 @@ fn parse_u32_vec(record: &MatRecord) -> Result<Vec<u32>> {
     }
     Ok(record
         .payload
-        .chunks_exact(4)
-        .map(|chunk| u32::from_le_bytes(chunk.try_into().unwrap()))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|chunk| u32::from_le_bytes(*chunk))
         .collect())
 }
 
@@ -207,7 +213,9 @@ fn decode_track_block(payload: &[u8]) -> Result<Vec<Vec<[f32; 3]>>> {
         cursor += delta_count;
 
         let streamline = values
-            .chunks_exact(3)
+            .as_chunks::<3>()
+            .0
+            .iter()
             .map(|chunk| {
                 [
                     chunk[0] as f32 / 32.0,

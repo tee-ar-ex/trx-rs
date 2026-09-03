@@ -82,7 +82,7 @@ fn parse_tck_bytes(bytes: &[u8]) -> Result<Vec<Vec<[f32; 3]>>> {
     let mut current = Vec::new();
     let mut saw_eof = false;
 
-    for chunk in payload.chunks_exact(12) {
+    for chunk in payload.as_chunks::<12>().0 {
         let point = [
             f32::from_le_bytes(chunk[0..4].try_into().unwrap()),
             f32::from_le_bytes(chunk[4..8].try_into().unwrap()),
