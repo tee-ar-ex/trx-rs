@@ -1,4 +1,5 @@
 use half::f16;
+use std::io::BufReader;
 use std::path::Path;
 
 use crate::dtype::DType;
@@ -277,14 +278,23 @@ fn detect_positions_dtype_dir(dir: &Path) -> Result<DType> {
             return Ok(parsed.dtype);
         }
     }
-    Err(TrxError::Format(
-        "no positions file found in directory".into(),
-    ))
+
+    let header_path = dir.join("header.json");
+    if header_path.is_file() {
+        let file = std::fs::File::open(&header_path)?;
+        let reader = BufReader::new(file);
+        let header: Header = serde_json::from_reader(reader)?;
+        if header.nb_vertices == 0 {
+            return Ok(DType::Float16);
+        }
+    }
+    Err(TrxError::FileNotFound(dir.join("positions")))
 }
 
 fn detect_positions_dtype_zip(path: &Path) -> Result<DType> {
     let file = std::fs::File::open(path)?;
-    let archive = zip::ZipArchive::new(file)?;
+    let reader = BufReader::new(file);
+    let mut archive = zip::ZipArchive::new(reader)?;
 
     for i in 0..archive.len() {
         let name = archive.name_for_index(i).unwrap_or("");
@@ -294,7 +304,59 @@ fn detect_positions_dtype_zip(path: &Path) -> Result<DType> {
             return Ok(parsed.dtype);
         }
     }
-    Err(TrxError::Format(
-        "no positions file found in zip archive".into(),
-    ))
+
+    if let Ok(mut header_entry) = archive.by_name("header.json") {
+        let mut bytes = Vec::new();
+        if std::io::Read::read_to_end(&mut header_entry, &mut bytes).is_ok() {
+            if let Ok(header) = serde_json::from_slice::<Header>(&bytes) {
+                if header.nb_vertices == 0 {
+                    return Ok(DType::Float16);
+                }
+            }
+        }
+    }
+
+    Err(TrxError::FileNotFound(path.join("positions")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn detect_positions_dtype_missing_positions_non_empty_errors() {
+        let dir = TempDir::new().unwrap();
+        let header_path = dir.path().join("header.json");
+        let header = Header {
+            voxel_to_rasmm: Header::identity_affine(),
+            dimensions: [100, 100, 100],
+            nb_streamlines: 1,
+            nb_vertices: 10,
+            extra: Default::default(),
+        };
+        let json = serde_json::to_string(&header).unwrap();
+        std::fs::write(&header_path, json).unwrap();
+
+        let result = detect_positions_dtype(dir.path());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn detect_positions_dtype_missing_positions_empty_succeeds() {
+        let dir = TempDir::new().unwrap();
+        let header_path = dir.path().join("header.json");
+        let header = Header {
+            voxel_to_rasmm: Header::identity_affine(),
+            dimensions: [100, 100, 100],
+            nb_streamlines: 0,
+            nb_vertices: 0,
+            extra: Default::default(),
+        };
+        let json = serde_json::to_string(&header).unwrap();
+        std::fs::write(&header_path, json).unwrap();
+
+        let result = detect_positions_dtype(dir.path()).unwrap();
+        assert_eq!(result, DType::Float16);
+    }
 }

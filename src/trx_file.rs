@@ -78,11 +78,20 @@ impl DataArray {
     /// Convert this array to a `Vec<u32>`, handling int64/uint64 source dtypes.
     pub fn to_u32_vec(&self) -> Vec<u32> {
         match self.dtype {
-            DType::UInt32 => self.cast_slice::<u32>().to_vec(),
-            DType::Int32 => self.cast_slice::<i32>().iter().map(|&x| x as u32).collect(),
-            DType::UInt64 => self.cast_slice::<u64>().iter().map(|&x| x as u32).collect(),
-            DType::Int64 => self.cast_slice::<i64>().iter().map(|&x| x as u32).collect(),
-            _ => self.cast_slice::<u32>().to_vec(),
+            DType::UInt32 => bytemuck::pod_collect_to_vec(self.as_bytes()),
+            DType::Int32 => bytemuck::pod_collect_to_vec::<u8, i32>(self.as_bytes())
+                .into_iter()
+                .map(|x| x as u32)
+                .collect(),
+            DType::UInt64 => bytemuck::pod_collect_to_vec::<u8, u64>(self.as_bytes())
+                .into_iter()
+                .map(|x| x as u32)
+                .collect(),
+            DType::Int64 => bytemuck::pod_collect_to_vec::<u8, i64>(self.as_bytes())
+                .into_iter()
+                .map(|x| x as u32)
+                .collect(),
+            _ => bytemuck::pod_collect_to_vec(self.as_bytes()),
         }
     }
 }
@@ -104,17 +113,12 @@ pub(crate) struct TrxParts {
     pub dpv: HashMap<String, DataArray>,
     pub groups: HashMap<String, DataArray>,
     pub dpg: DataPerGroup,
-    pub tempdir: Option<tempfile::TempDir>,
 }
 
 /// Core TRX container, generic over the position scalar type `P`.
 ///
 /// Owns all memory-mapped (or heap-allocated) backings. Typed views borrow
 /// from `self` — no explicit lifetime annotations needed.
-///
-/// # Field ordering
-/// `_tempdir` must be declared AFTER mmap fields so it is dropped last,
-/// keeping the temp directory alive while mmaps reference files within it.
 pub struct TrxFile<P: TrxScalar> {
     header: Header,
 
@@ -137,9 +141,6 @@ pub struct TrxFile<P: TrxScalar> {
     /// Data per group: group name -> field name -> DataArray.
     dpg: DataPerGroup,
 
-    /// Temp directory handle (for zip-extracted files). Kept alive until drop.
-    _tempdir: Option<tempfile::TempDir>,
-
     _phantom: std::marker::PhantomData<P>,
 }
 
@@ -154,7 +155,6 @@ impl<P: TrxScalar> TrxFile<P> {
             dpv: HashMap::new(),
             groups: HashMap::new(),
             dpg: HashMap::new(),
-            _tempdir: None,
             _phantom: std::marker::PhantomData,
         }
     }
@@ -169,7 +169,6 @@ impl<P: TrxScalar> TrxFile<P> {
             dpv: parts.dpv,
             groups: parts.groups,
             dpg: parts.dpg,
-            _tempdir: parts.tempdir,
             _phantom: std::marker::PhantomData,
         }
     }
@@ -188,7 +187,12 @@ impl<P: TrxScalar> TrxFile<P> {
 
     /// Positions as a flat slice of `[P; 3]` arrays.
     pub fn positions(&self) -> &[[P; 3]] {
-        cast_slice(self.positions_backing.as_bytes())
+        let bytes = self.positions_backing.as_bytes();
+        if bytes.is_empty() {
+            &[]
+        } else {
+            cast_slice(bytes)
+        }
     }
 
     /// Positions as a `TypedView2D` with 3 columns.
@@ -426,7 +430,7 @@ impl<P: TrxScalar> TrxFile<P> {
     }
 
     pub fn is_file_backed(&self) -> bool {
-        self._tempdir.is_some() && self.positions_backing.is_mapped()
+        self.positions_backing.is_mapped()
     }
 
     pub(crate) fn dps_arrays(&self) -> &HashMap<String, DataArray> {
@@ -485,7 +489,6 @@ impl<P: TrxScalar> TrxFile<P> {
             dpv: clone_data_map(&self.dpv),
             groups: clone_data_map(&self.groups),
             dpg: clone_dpg_map(&self.dpg),
-            tempdir: None,
         })
     }
 

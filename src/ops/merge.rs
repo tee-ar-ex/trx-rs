@@ -159,8 +159,8 @@ where
     header.nb_streamlines = total_streamlines as u64;
     header.nb_vertices = total_vertices as u64;
 
-    let tempdir = tempfile::TempDir::new()?;
-    let tempdir_path = tempdir.path().to_path_buf();
+    #[allow(deprecated)]
+    let tempdir_path = tempfile::TempDir::new()?.into_path();
 
     let mut positions_backing = create_mmap_backing(
         &tempdir_path.join(format!("positions.3.{}", P::DTYPE.name())),
@@ -194,7 +194,6 @@ where
         dpv,
         groups,
         dpg: HashMap::new(),
-        tempdir: Some(tempdir),
     }))
 }
 
@@ -214,8 +213,8 @@ where
     header.nb_streamlines = total_streamlines as u64;
     header.nb_vertices = total_vertices as u64;
 
-    let tempdir = tempfile::TempDir::new()?;
-    let tempdir_path = tempdir.path().to_path_buf();
+    #[allow(deprecated)]
+    let tempdir_path = tempfile::TempDir::new()?.into_path();
 
     let mut positions_backing = create_mmap_backing(
         &tempdir_path.join(format!("positions.3.{}", P::DTYPE.name())),
@@ -249,7 +248,6 @@ where
         dpv,
         groups,
         dpg: HashMap::new(),
-        tempdir: Some(tempdir),
     }))
 }
 
@@ -1037,7 +1035,6 @@ mod tests {
             dpv,
             groups,
             dpg,
-            tempdir: None,
         })
     }
 

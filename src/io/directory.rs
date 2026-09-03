@@ -90,10 +90,7 @@ fn find_file_with_prefix(dir: &Path, prefix: &str) -> Result<std::path::PathBuf>
 }
 
 /// Load a `TrxFile<P>` from an uncompressed directory.
-pub fn load_from_directory<P: TrxScalar>(
-    dir: &Path,
-    tempdir: Option<tempfile::TempDir>,
-) -> Result<TrxFile<P>> {
+pub fn load_from_directory<P: TrxScalar>(dir: &Path) -> Result<TrxFile<P>> {
     if !dir.is_dir() {
         return Err(TrxError::FileNotFound(dir.to_path_buf()));
     }
@@ -101,45 +98,62 @@ pub fn load_from_directory<P: TrxScalar>(
     // Header
     let header = Header::from_file(&dir.join("header.json"))?;
 
-    // Positions
-    let pos_path = find_file_with_prefix(dir, "positions")?;
-    let pos_fname = pos_path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .ok_or_else(|| TrxError::Format("invalid positions filename".into()))?;
-    let pos_parsed = TrxFilename::parse(pos_fname)?;
+    let positions_backing = match find_file_with_prefix(dir, "positions") {
+        Ok(pos_path) => {
+            let pos_fname = pos_path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .ok_or_else(|| TrxError::Format("invalid positions filename".into()))?;
+            let pos_parsed = TrxFilename::parse(pos_fname)?;
 
-    if pos_parsed.dtype != P::DTYPE {
-        return Err(TrxError::DType(format!(
-            "expected positions dtype {}, got {}",
-            P::DTYPE,
-            pos_parsed.dtype
-        )));
-    }
-    if pos_parsed.ncols != 3 {
-        return Err(TrxError::Format(format!(
-            "positions must have 3 columns, got {}",
-            pos_parsed.ncols
-        )));
-    }
+            if pos_parsed.dtype != P::DTYPE {
+                return Err(TrxError::DType(format!(
+                    "expected positions dtype {}, got {}",
+                    P::DTYPE,
+                    pos_parsed.dtype
+                )));
+            }
+            if pos_parsed.ncols != 3 {
+                return Err(TrxError::Format(format!(
+                    "positions must have 3 columns, got {}",
+                    pos_parsed.ncols
+                )));
+            }
+            MmapBacking::ReadOnly(mmap_file(&pos_path)?)
+        }
+        Err(e) => {
+            if header.nb_vertices == 0 {
+                MmapBacking::Owned(Vec::new())
+            } else {
+                return Err(e);
+            }
+        }
+    };
 
-    let positions_backing = MmapBacking::ReadOnly(mmap_file(&pos_path)?);
+    let offsets_backing = match find_file_with_prefix(dir, "offsets") {
+        Ok(off_path) => {
+            let off_fname = off_path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .ok_or_else(|| TrxError::Format("invalid offsets filename".into()))?;
+            let off_parsed = TrxFilename::parse(off_fname)?;
 
-    // Offsets
-    let off_path = find_file_with_prefix(dir, "offsets")?;
-    let off_fname = off_path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .ok_or_else(|| TrxError::Format("invalid offsets filename".into()))?;
-    let off_parsed = TrxFilename::parse(off_fname)?;
-
-    let offsets_mmap = mmap_file(&off_path)?;
-    let offsets_backing = convert_offsets_to_u32(
-        &offsets_mmap,
-        off_parsed.dtype,
-        header.nb_streamlines as usize,
-        header.nb_vertices as usize,
-    )?;
+            let offsets_mmap = mmap_file(&off_path)?;
+            convert_offsets_to_u32(
+                &offsets_mmap,
+                off_parsed.dtype,
+                header.nb_streamlines as usize,
+                header.nb_vertices as usize,
+            )?
+        }
+        Err(e) => {
+            if header.nb_streamlines == 0 {
+                MmapBacking::OwnedU32(vec![0u32], 4)
+            } else {
+                return Err(e);
+            }
+        }
+    };
 
     // DPS, DPV, groups
     let dps = load_data_dir(&dir.join("dps"))?;
@@ -155,7 +169,6 @@ pub fn load_from_directory<P: TrxScalar>(
         dpv,
         groups,
         dpg,
-        tempdir,
     }))
 }
 

@@ -44,6 +44,21 @@ pub fn load_trk(path: &Path) -> Result<Tractogram, Box<dyn std::error::Error>> {
     }
 
     let mut tr = Tractogram::new();
+
+    let dims = [
+        i16::from_le_bytes(buffer[6..8].try_into().unwrap()) as u64,
+        i16::from_le_bytes(buffer[8..10].try_into().unwrap()) as u64,
+        i16::from_le_bytes(buffer[10..12].try_into().unwrap()) as u64,
+    ];
+
+    let mut vox_to_ras_f64 = [[0.0; 4]; 4];
+    for r in 0..4 {
+        for c in 0..4 {
+            vox_to_ras_f64[r][c] = vox_to_ras[(r, c)] as f64;
+        }
+    }
+    tr.set_spatial_metadata(vox_to_ras_f64, dims);
+
     let mut offset = 1000;
 
     while offset + 4 <= buffer.len() {
@@ -160,13 +175,21 @@ pub fn load_vtk(path: &Path) -> Result<Tractogram, Box<dyn std::error::Error>> {
             .ok_or("No newline after OFFSETS")?
             + offset
             + 1;
-        let is_int64 = buffer[offset..offsets_header_end]
-            .windows(5)
-            .any(|w| w == b"int64");
+
+        let header_str = String::from_utf8_lossy(&buffer[offset..offsets_header_end]);
+        let tokens: Vec<&str> = header_str.split_whitespace().collect();
+
+        let num_offsets = if tokens.len() >= 3 {
+            tokens[2].parse().unwrap_or(num_lines)
+        } else {
+            num_lines
+        };
+
+        let is_int64 = header_str.contains("int64");
         offset = offsets_header_end;
 
-        let mut offsets_vec = Vec::with_capacity(num_lines);
-        for _ in 0..num_lines {
+        let mut offsets_vec = Vec::with_capacity(num_offsets);
+        for _ in 0..num_offsets {
             if is_int64 {
                 let chunk = buffer
                     .get(offset..offset + 8)
@@ -184,9 +207,11 @@ pub fn load_vtk(path: &Path) -> Result<Tractogram, Box<dyn std::error::Error>> {
             }
         }
 
-        for i in 0..num_lines - 1 {
+        let actual_num_lines = num_offsets.saturating_sub(1);
+        for i in 0..actual_num_lines {
             let start = offsets_vec[i];
             let end = offsets_vec[i + 1];
+
             if end > pts.len() / 3 {
                 return Err("Offset points out of bounds".into());
             }
@@ -450,6 +475,55 @@ pub fn write_trx(
     Ok(())
 }
 
+/// Derive the 3-byte voxel_order field from a 4×4 affine matrix,
+/// replicating nibabel's `io_orientation` polar-decomposition approach:
+///   1. Normalize columns of the 3×3 block by their L2 norm (removes zoom/scale).
+///   2. SVD of the normalized matrix → R = U * V^T (closest pure rotation).
+///   3. For each input axis (column of R), pick the dominant output axis
+///      (argmax of abs values) with axis-exclusion to handle oblique cases.
+fn axcodes_from_affine(aff: &[[f64; 4]; 4]) -> [u8; 3] {
+    use nalgebra::{Matrix3, SVD};
+    const POS: [u8; 3] = *b"RAS";
+    const NEG: [u8; 3] = *b"LPI";
+
+    // Step 1: build column-normalized 3×3 matrix
+    let mut rs = Matrix3::<f64>::zeros();
+    for col in 0..3 {
+        let norm = (0..3).map(|r| aff[r][col].powi(2)).sum::<f64>().sqrt();
+        let norm = if norm == 0.0 { 1.0 } else { norm };
+        for row in 0..3 {
+            rs[(row, col)] = aff[row][col] / norm;
+        }
+    }
+
+    // Step 2: SVD → R = U * V^T (polar factor, closest orthonormal matrix)
+    let svd = SVD::new(rs, true, true);
+    let u = svd.u.expect("SVD U not computed");
+    let v_t = svd.v_t.expect("SVD V^T not computed");
+    let r = u * v_t;
+
+    // Step 3: per-column argmax with axis exclusion (mirrors nibabel exactly)
+    let mut used = [false; 3];
+    let mut codes = [b'?'; 3];
+    for col in 0..3 {
+        let mut best_row = 0usize;
+        let mut best_val = -1.0f64;
+        for row in 0..3 {
+            if !used[row] && r[(row, col)].abs() > best_val {
+                best_val = r[(row, col)].abs();
+                best_row = row;
+            }
+        }
+        used[best_row] = true;
+        codes[col] = if r[(best_row, col)] >= 0.0 {
+            POS[best_row]
+        } else {
+            NEG[best_row]
+        };
+    }
+    codes
+}
+
 pub fn write_trk(
     path: &Path,
     tractogram: &Tractogram,
@@ -501,7 +575,9 @@ pub fn write_trk(
         }
     }
 
-    header_bytes[948..952].copy_from_slice(b"RAS\0");
+    let axcodes = axcodes_from_affine(&vox_to_ras);
+    header_bytes[948..951].copy_from_slice(&axcodes);
+    header_bytes[951] = 0;
 
     let nb_streamlines = tractogram.nb_streamlines() as i32;
     header_bytes[988..992].copy_from_slice(&nb_streamlines.to_le_bytes());
